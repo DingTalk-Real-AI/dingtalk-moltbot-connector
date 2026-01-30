@@ -1,6 +1,6 @@
-# dingtalk-moltbot-connector
+# DingTalk OpenClaw Connector
 
-将钉钉机器人连接到 [Moltbot](https://moltbot.com) / [Clawdbot](https://clawdbot.com) Gateway，支持 AI Card 流式响应和会话管理。
+将钉钉机器人连接到 [OpenClaw](https://openclaw.ai) Gateway，支持 AI Card 流式响应和会话管理。
 
 ## 特性
 
@@ -9,16 +9,6 @@
 - ✅ **超时自动新会话** - 默认 30 分钟无活动自动开启新对话
 - ✅ **手动新会话** - 发送 `/new` 或 `新会话` 清空对话历史
 - ✅ **图片自动上传** - 本地图片路径自动上传到钉钉
-
-## 两种实现
-
-| | **TypeScript 插件** | **Python 独立连接器** |
-|---|---|---|
-| 运行方式 | Moltbot/Clawdbot 内置插件 | 独立进程 |
-| 入口文件 | `plugin.ts` | `src/dingtalk_moltbot_connector/` |
-| AI Card 流式 | 手动调用钉钉 REST API | 使用 `dingtalk-stream` SDK 内置方法 |
-| 图片处理 | system prompt 引导 + **后处理自动上传** | system prompt 引导 |
-| 安装方式 | `moltbot plugins install` | `pip install -e .` |
 
 ## 架构
 
@@ -38,39 +28,44 @@ graph LR
 ```
 
 ## 效果
+
 <img width="360" height="780" alt="image" src="https://github.com/user-attachments/assets/f2a3db5d-67fa-4078-b19c-a2acdff9f2bf" />
 <img width="360" height="780" alt="image" src="https://github.com/user-attachments/assets/c3e51c05-c44c-4bc4-8877-911ec471b645" />
 
-
-## 方式一：Moltbot / Clawdbot 插件（推荐）
+## 安装
 
 ### 1. 安装插件
 
 ```bash
 # 远程安装
-clawdbot plugins install https://github.com/DingTalk-Real-AI/dingtalk-moltbot-connector.git
-# 后续插件升级
-clawdbot plugins update dingtalk-connector
+openclaw plugins install https://github.com/DingTalk-Real-AI/dingtalk-moltbot-connector.git
+
+# 升级插件
+openclaw plugins update dingtalk-connector
 
 # 或本地开发模式
 git clone https://github.com/DingTalk-Real-AI/dingtalk-moltbot-connector.git
-clawdbot plugins install -l ./dingtalk-moltbot-connector
+cd dingtalk-moltbot-connector
+npm install
+openclaw plugins install -l .
 ```
+
+> **⚠️ 旧版本升级提示：** 如果你之前安装过旧版本的 Clawdbot/Moltbot 或 0.4.0 以下版本的 connector 插件，可能会出现兼容性问题，请参考 [Q: 升级后出现插件加载异常或配置不生效](#q-升级后出现插件加载异常或配置不生效)。
 
 ### 2. 配置
 
-在 `~/.moltbot/moltbot.json`（或 `~/.clawdbot/clawdbot.json`）中添加：
+在 `~/.openclaw/openclaw.json` 中添加：
 
 ```json5
 {
   "channels": {
-    "dingtalk": {
+    "dingtalk-connector": {
       "enabled": true,
       "clientId": "dingxxxxxxxxx",       // 钉钉 AppKey
       "clientSecret": "your_secret_here", // 钉钉 AppSecret
       "gatewayToken": "",                 // 可选：Gateway 认证 token
       "gatewayPassword": "",              // 可选：Gateway 认证 password（与 token 二选一）
-      "sessionTimeout": 1800000,          // 可选：会话超时(ms)，默认 30 分钟
+      "sessionTimeout": 1800000           // 可选：会话超时(ms)，默认 30 分钟
     }
   },
   "gateway": { // gateway通常是已有的节点，配置时注意把http部分追加到已有节点下
@@ -85,59 +80,21 @@ clawdbot plugins install -l ./dingtalk-moltbot-connector
 }
 ```
 
-或者在Moltbot Dashboard页面配置
-<img width="1916" height="1996" alt="image" src="https://github.com/user-attachments/assets/00b585ca-c1df-456c-9c65-7345a718b94b" />
+或者在 OpenClaw Dashboard 页面配置：
 
+<img width="1916" height="1996" alt="image" src="https://github.com/user-attachments/assets/00b585ca-c1df-456c-9c65-7345a718b94b" />
 
 ### 3. 重启 Gateway
 
 ```bash
-clawdbot gateway restart
+openclaw gateway restart
 ```
 
 验证：
 
 ```bash
-clawdbot plugins list               # 确认 dingtalk-connector 已加载
+openclaw plugins list  # 确认 dingtalk-connector 已加载
 ```
-
----
-
-## 方式二：独立 Python 连接器
-
-不依赖插件系统，独立运行的轻量桥接服务。
-
-### 前置条件
-
-- **Python** 3.10+
-- **Gateway** 已在本地或远程运行
-- **钉钉机器人** 已创建并配置为 Stream 模式
-
-### 1. 安装并启动
-
-```bash
-git clone https://github.com/DingTalk-Real-AI/dingtalk-moltbot-connector.git
-cd dingtalk-moltbot-connector
-pip install -e .
-
-# 交互式启动
-python examples/quick_start.py
-```
-
-**代码集成：**
-
-```python
-from dingtalk_moltbot_connector import MoltbotConnector
-
-connector = MoltbotConnector(
-    dingtalk_client_id="dingxxxxxxxxx",
-    dingtalk_client_secret="your_secret_here",
-    gateway_url="http://127.0.0.1:18789",
-)
-connector.start()
-```
-
----
 
 ## 创建钉钉机器人
 
@@ -154,9 +111,9 @@ connector.start()
 
 | 配置项 | 环境变量 | 说明 |
 |--------|----------|------|
-| `clientId` / `dingtalk_client_id` | `DINGTALK_CLIENT_ID` | 钉钉 AppKey |
-| `clientSecret` / `dingtalk_client_secret` | `DINGTALK_CLIENT_SECRET` | 钉钉 AppSecret |
-| `gatewayToken` / `gateway_token` | `MOLTBOT_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
+| `clientId` | `DINGTALK_CLIENT_ID` | 钉钉 AppKey |
+| `clientSecret` | `DINGTALK_CLIENT_SECRET` | 钉钉 AppSecret |
+| `gatewayToken` | `OPENCLAW_GATEWAY_TOKEN` | Gateway 认证 token（可选） |
 | `gatewayPassword` | — | Gateway 认证 password（可选，与 token 二选一） |
 | `sessionTimeout` | — | 会话超时时间，单位毫秒（默认 1800000 = 30分钟） |
 
@@ -171,30 +128,19 @@ connector.start()
 
 ```
 dingtalk-moltbot-connector/
-├── plugin.ts                 # TS 插件入口（Moltbot/Clawdbot）
-├── clawdbot.plugin.json      # Clawdbot 插件清单
-├── moltbot.plugin.json       # Moltbot 插件清单
-├── package.json              # npm 依赖（插件模式）
-├── src/                      # Python 独立连接器
-│   └── dingtalk_moltbot_connector/
-│       ├── __init__.py
-│       ├── connector.py      # MoltbotConnector 主类
-│       ├── handler.py        # 钉钉消息处理器
-│       ├── config.py         # 配置管理
-│       └── media.py          # 图片上传辅助
-├── examples/
-│   ├── quick_start.py        # 交互式快速启动
-│   ├── env_start.py          # 环境变量方式
-│   └── custom_prompt.py      # 自定义 prompt
-├── pyproject.toml            # Python 包配置
+├── plugin.ts              # 插件入口
+├── openclaw.plugin.json   # 插件清单
+├── package.json           # npm 依赖
 └── LICENSE
 ```
 
 ## 常见问题
 
-### Q: 出现405错误
+### Q: 出现 405 错误
+
 <img width="698" height="193" alt="image" src="https://github.com/user-attachments/assets/f2abd9c0-6c72-45b3-aee1-39fb477664bd" />
-注意~/.clawdbot/clawdbot.json中要添加chatCompletions端点
+
+需要在 `~/.openclaw/openclaw.json` 中启用 chatCompletions 端点：
 
 ```json5
 {
@@ -210,11 +156,13 @@ dingtalk-moltbot-connector/
 }
 ```
 
-### Q: 出现401错误
-<img width="895" height="257" alt="image" src="https://github.com/user-attachments/assets/5d6227f0-b4b1-41c4-ad88-82a7ec0ade1e" />
-注意~/.clawdbot/clawdbot.json中鉴权token/password要对上
-<img width="1322" height="604" alt="image" src="https://github.com/user-attachments/assets/b9f97446-5035-4325-a0dd-8f8e32f7b86a" />
+### Q: 出现 401 错误
 
+<img width="895" height="257" alt="image" src="https://github.com/user-attachments/assets/5d6227f0-b4b1-41c4-ad88-82a7ec0ade1e" />
+
+检查 `~/.openclaw/openclaw.json` 中的鉴权 token/password 是否正确：
+
+<img width="1322" height="604" alt="image" src="https://github.com/user-attachments/assets/b9f97446-5035-4325-a0dd-8f8e32f7b86a" />
 
 ### Q: 钉钉机器人无响应
 
@@ -226,28 +174,33 @@ dingtalk-moltbot-connector/
 
 需要开通权限 `Card.Streaming.Write` 和 `Card.Instance.Write`，并重新发布应用。
 
+### Q: 升级后出现插件加载异常或配置不生效
+
+由于官方两次更名（Clawdbot → Moltbot → OpenClaw），旧版本（0.4.0 以下）的 connector 插件可能与新版本不兼容。建议按以下步骤处理：
+
+1. 先检查 `~/.openclaw/openclaw.json`（或旧版的 `~/.clawdbot/clawdbot.json`、`~/.moltbot/moltbot.json`），如果其中存在 dingtalk 相关的 JSON 节点（如 `channels.dingtalk`、`plugins.entries.dingtalk` 等），请将这些节点全部删除。
+
+2. 然后清除旧插件并重新安装：
+
+```bash
+rm -rf ~/.clawdbot/extensions/dingtalk-connector
+rm -rf ~/.moltbot/extensions/dingtalk-connector
+rm -rf ~/.openclaw/extensions/dingtalk-connector
+openclaw plugins install https://github.com/DingTalk-Real-AI/dingtalk-moltbot-connector.git
+```
+
 ### Q: 图片不显示
 
 1. 确认 `enableMediaUpload: true`（默认开启）
-2. TS 插件会自动后处理上传，检查日志 `[DingTalk][Media]` 相关输出
+2. 检查日志 `[DingTalk][Media]` 相关输出
 3. 确认钉钉应用有图片上传权限
 
 ## 依赖
-
-**TypeScript 插件：**
 
 | 包 | 用途 |
 |----|------|
 | `dingtalk-stream` | 钉钉 Stream 协议客户端 |
 | `axios` | HTTP 客户端 |
-| `form-data` | 图片上传 multipart |
-
-**Python 连接器：**
-
-| 包 | 用途 |
-|----|------|
-| `dingtalk-stream` | 钉钉 Stream 协议 + AI Card SDK |
-| `httpx` | 异步 HTTP 客户端（SSE 流） |
 
 ## License
 

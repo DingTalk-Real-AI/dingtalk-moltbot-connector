@@ -11,7 +11,7 @@ import type { ClawdbotPluginApi, PluginRuntime, ClawdbotConfig } from 'clawdbot/
 
 // ============ 常量 ============
 
-export const id = 'dingtalk';
+export const id = 'dingtalk-connector';
 
 let runtime: PluginRuntime | null = null;
 
@@ -25,7 +25,7 @@ function getRuntime(): PluginRuntime {
 /** 用户会话状态：记录最后活跃时间和当前 session 标识 */
 interface UserSession {
   lastActivity: number;
-  sessionId: string;  // 格式: dingtalk:<senderId> 或 dingtalk:<senderId>:<timestamp>
+  sessionId: string;  // 格式: dingtalk-connector:<senderId> 或 dingtalk-connector:<senderId>:<timestamp>
 }
 
 /** 用户会话缓存 Map<senderId, UserSession> */
@@ -52,7 +52,7 @@ function getSessionKey(
 
   // 强制新会话
   if (forceNew) {
-    const sessionId = `dingtalk:${senderId}:${now}`;
+    const sessionId = `dingtalk-connector:${senderId}:${now}`;
     userSessions.set(senderId, { lastActivity: now, sessionId });
     log?.info?.(`[DingTalk][Session] 用户主动开启新会话: ${senderId}`);
     return { sessionKey: sessionId, isNew: true };
@@ -62,7 +62,7 @@ function getSessionKey(
   if (existing) {
     const elapsed = now - existing.lastActivity;
     if (elapsed > sessionTimeout) {
-      const sessionId = `dingtalk:${senderId}:${now}`;
+      const sessionId = `dingtalk-connector:${senderId}:${now}`;
       userSessions.set(senderId, { lastActivity: now, sessionId });
       log?.info?.(`[DingTalk][Session] 会话超时(${Math.round(elapsed / 60000)}分钟)，自动开启新会话: ${senderId}`);
       return { sessionKey: sessionId, isNew: true };
@@ -73,7 +73,7 @@ function getSessionKey(
   }
 
   // 首次会话
-  const sessionId = `dingtalk:${senderId}`;
+  const sessionId = `dingtalk-connector:${senderId}`;
   userSessions.set(senderId, { lastActivity: now, sessionId });
   log?.info?.(`[DingTalk][Session] 新用户首次会话: ${senderId}`);
   return { sessionKey: sessionId, isNew: false };
@@ -103,7 +103,7 @@ async function getAccessToken(config: any): Promise<string> {
 // ============ 配置工具 ============
 
 function getConfig(cfg: ClawdbotConfig) {
-  return (cfg?.channels as any)?.dingtalk || {};
+  return (cfg?.channels as any)?.['dingtalk-connector'] || {};
 }
 
 function isConfigured(cfg: ClawdbotConfig): boolean {
@@ -148,27 +148,41 @@ function buildMediaSystemPrompt(): string {
 // ============ 图片后处理：自动上传本地图片到钉钉 ============
 
 /**
- * 匹配 markdown 图片中的本地文件路径：
+ * 匹配 markdown 图片中的本地文件路径（跨平台）：
  * - ![alt](file:///path/to/image.jpg)
  * - ![alt](MEDIA:/var/folders/xxx.jpg)
+ * - ![alt](attachment:///path.jpg)
+ * macOS:
  * - ![alt](/tmp/xxx.jpg)
  * - ![alt](/var/folders/xxx.jpg)
  * - ![alt](/Users/xxx/photo.jpg)
- * - ![alt](attachment:///path.jpg)
+ * Linux:
+ * - ![alt](/home/user/photo.jpg)
+ * - ![alt](/root/photo.jpg)
+ * Windows:
+ * - ![alt](C:\Users\xxx\photo.jpg)
+ * - ![alt](C:/Users/xxx/photo.jpg)
  */
-const LOCAL_IMAGE_RE = /!\[([^\]]*)\]\(((?:file:\/\/\/|MEDIA:|attachment:\/\/\/)[^\s)]+|\/(?:tmp|var|private|Users)[^\s)]+)\)/g;
+const LOCAL_IMAGE_RE = /!\[([^\]]*)\]\(((?:file:\/\/\/|MEDIA:|attachment:\/\/\/)[^\s)]+|\/(?:tmp|var|private|Users|home|root)[^\s)]+|[A-Za-z]:[\\/][^\s)]+)\)/g;
 
 /** 图片文件扩展名 */
 const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|bmp|webp|tiff|svg)$/i;
 
 /**
- * 匹配纯文本中的本地图片路径（不在 markdown 图片语法中）：
+ * 匹配纯文本中的本地图片路径（不在 markdown 图片语法中，跨平台）：
+ * macOS:
  * - `/var/folders/.../screenshot.png`
  * - `/tmp/image.jpg`
  * - `/Users/xxx/photo.png`
+ * Linux:
+ * - `/home/user/photo.png`
+ * - `/root/photo.png`
+ * Windows:
+ * - `C:\Users\xxx\photo.png`
+ * - `C:/temp/image.jpg`
  * 支持 backtick 包裹: `path`
  */
-const BARE_IMAGE_PATH_RE = /`?(\/(?:tmp|var|private|Users)\/[^\s`'",)]+\.(?:png|jpg|jpeg|gif|bmp|webp))`?/gi;
+const BARE_IMAGE_PATH_RE = /`?((?:\/(?:tmp|var|private|Users|home|root)\/[^\s`'",)]+|[A-Za-z]:[\\/][^\s`'",)]+)\.(?:png|jpg|jpeg|gif|bmp|webp))`?/gi;
 
 /** 去掉 file:// / MEDIA: / attachment:// 前缀，得到实际的绝对路径 */
 function toLocalPath(raw: string): string {
@@ -776,18 +790,18 @@ async function handleDingTalkMessage(params: {
 // ============ 插件定义 ============
 
 const meta = {
-  id: 'dingtalk',
+  id: 'dingtalk-connector',
   label: 'DingTalk',
   selectionLabel: 'DingTalk (钉钉)',
-  docsPath: '/channels/dingtalk',
-  docsLabel: 'dingtalk',
+  docsPath: '/channels/dingtalk-connector',
+  docsLabel: 'dingtalk-connector',
   blurb: '钉钉企业内部机器人，使用 Stream 模式，无需公网 IP，支持 AI Card 流式响应。',
   order: 70,
   aliases: ['dd', 'ding'],
 };
 
 const dingtalkPlugin = {
-  id: 'dingtalk',
+  id: 'dingtalk-connector',
   meta,
   capabilities: {
     chatTypes: ['direct', 'group'],
@@ -797,7 +811,7 @@ const dingtalkPlugin = {
     nativeCommands: false,
     blockStreaming: false,
   },
-  reload: { configPrefixes: ['channels.dingtalk'] },
+  reload: { configPrefixes: ['channels.dingtalk-connector'] },
   configSchema: {
     schema: {
       type: 'object',
@@ -854,10 +868,10 @@ const dingtalkPlugin = {
     resolveDmPolicy: ({ account }: any) => ({
       policy: account.config?.dmPolicy || 'open',
       allowFrom: account.config?.allowFrom || [],
-      policyPath: 'channels.dingtalk.dmPolicy',
-      allowFromPath: 'channels.dingtalk.allowFrom',
-      approveHint: '使用 /allow dingtalk:<userId> 批准用户',
-      normalizeEntry: (raw: string) => raw.replace(/^(dingtalk|dd|ding):/i, ''),
+      policyPath: 'channels.dingtalk-connector.dmPolicy',
+      allowFromPath: 'channels.dingtalk-connector.allowFrom',
+      approveHint: '使用 /allow dingtalk-connector:<userId> 批准用户',
+      normalizeEntry: (raw: string) => raw.replace(/^(dingtalk-connector|dingtalk|dd|ding):/i, ''),
     }),
   },
   groups: {
@@ -865,7 +879,7 @@ const dingtalkPlugin = {
   },
   messaging: {
     normalizeTarget: ({ target }: any) =>
-      target ? { targetId: target.replace(/^(dingtalk|dd|ding):/i, '') } : null,
+      target ? { targetId: target.replace(/^(dingtalk-connector|dingtalk|dd|ding):/i, '') } : null,
     targetResolver: {
       looksLikeId: (id: string) => /^[\w-]+$/.test(id),
       hint: '<conversationId>',
@@ -923,7 +937,7 @@ const dingtalkPlugin = {
       ctx.log?.info(`[${account.accountId}] 钉钉 Stream 客户端已连接`);
 
       const rt = getRuntime();
-      rt.channel.activity.record('dingtalk', account.accountId, 'start');
+      rt.channel.activity.record('dingtalk-connector', account.accountId, 'start');
 
       let stopped = false;
       if (abortSignal) {
@@ -931,7 +945,7 @@ const dingtalkPlugin = {
           if (stopped) return;
           stopped = true;
           ctx.log?.info(`[${account.accountId}] 停止钉钉 Stream 客户端...`);
-          rt.channel.activity.record('dingtalk', account.accountId, 'stop');
+          rt.channel.activity.record('dingtalk-connector', account.accountId, 'stop');
         });
       }
 
@@ -940,7 +954,7 @@ const dingtalkPlugin = {
           if (stopped) return;
           stopped = true;
           ctx.log?.info(`[${account.accountId}] 钉钉 Channel 已停止`);
-          rt.channel.activity.record('dingtalk', account.accountId, 'stop');
+          rt.channel.activity.record('dingtalk-connector', account.accountId, 'stop');
         },
       };
     },
@@ -981,11 +995,11 @@ const plugin = {
   register(api: ClawdbotPluginApi) {
     runtime = api.runtime;
     api.registerChannel({ plugin: dingtalkPlugin });
-    api.registerGatewayMethod('dingtalk.status', async ({ respond, cfg }: any) => {
+    api.registerGatewayMethod('dingtalk-connector.status', async ({ respond, cfg }: any) => {
       const result = await dingtalkPlugin.status.probe({ cfg });
       respond(true, result);
     });
-    api.registerGatewayMethod('dingtalk.probe', async ({ respond, cfg }: any) => {
+    api.registerGatewayMethod('dingtalk-connector.probe', async ({ respond, cfg }: any) => {
       const result = await dingtalkPlugin.status.probe({ cfg });
       respond(result.ok, result);
     });
