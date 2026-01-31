@@ -817,69 +817,25 @@ interface AICardInstance {
   inputingStarted: boolean;
 }
 
-// 创建 AI Card 实例
+/**
+ * 创建 AI Card 实例（被动回复场景）
+ * 从钉钉回调 data 中提取目标信息，委托给通用函数
+ */
 async function createAICard(
   config: any,
   data: any,
   log?: any,
 ): Promise<AICardInstance | null> {
-  try {
-    const token = await getAccessToken(config);
-    const cardInstanceId = `card_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const isGroup = data.conversationType === '2';
 
-    log?.info?.(`[DingTalk][AICard] 开始创建卡片 outTrackId=${cardInstanceId}`);
-    log?.info?.(`[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${data.conversationId}, senderStaffId=${data.senderStaffId}, senderId=${data.senderId}`);
+  log?.info?.(`[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${data.conversationId}, senderStaffId=${data.senderStaffId}, senderId=${data.senderId}`);
 
-    // 1. 创建卡片实例（Python SDK 传空 cardParamMap，不预设 flowStatus）
-    const createBody = {
-      cardTemplateId: AI_CARD_TEMPLATE_ID,
-      outTrackId: cardInstanceId,
-      cardData: {
-        cardParamMap: {},
-      },
-      callbackType: 'STREAM',
-      imGroupOpenSpaceModel: { supportForward: true },
-      imRobotOpenSpaceModel: { supportForward: true },
-    };
+  // 构建通用目标
+  const target: AICardTarget = isGroup
+    ? { type: 'group', openConversationId: data.conversationId }
+    : { type: 'user', userId: data.senderStaffId || data.senderId };
 
-    log?.info?.(`[DingTalk][AICard] POST /v1.0/card/instances body=${JSON.stringify(createBody)}`);
-    const createResp = await axios.post(`${DINGTALK_API}/v1.0/card/instances`, createBody, {
-      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
-    });
-    log?.info?.(`[DingTalk][AICard] 创建卡片响应: status=${createResp.status} data=${JSON.stringify(createResp.data)}`);
-
-    // 2. 投放卡片
-    const isGroup = data.conversationType === '2';
-    const deliverBody: any = {
-      outTrackId: cardInstanceId,
-      userIdType: 1,
-    };
-
-    if (isGroup) {
-      deliverBody.openSpaceId = `dtv1.card//IM_GROUP.${data.conversationId}`;
-      deliverBody.imGroupOpenDeliverModel = {
-        robotCode: config.clientId,
-      };
-    } else {
-      const userId = data.senderStaffId || data.senderId;
-      deliverBody.openSpaceId = `dtv1.card//IM_ROBOT.${userId}`;
-      deliverBody.imRobotOpenDeliverModel = { spaceType: 'IM_ROBOT' };
-    }
-
-    log?.info?.(`[DingTalk][AICard] POST /v1.0/card/instances/deliver body=${JSON.stringify(deliverBody)}`);
-    const deliverResp = await axios.post(`${DINGTALK_API}/v1.0/card/instances/deliver`, deliverBody, {
-      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
-    });
-    log?.info?.(`[DingTalk][AICard] 投放卡片响应: status=${deliverResp.status} data=${JSON.stringify(deliverResp.data)}`);
-
-    return { cardInstanceId, accessToken: token, inputingStarted: false };
-  } catch (err: any) {
-    log?.error?.(`[DingTalk][AICard] 创建卡片失败: ${err.message}`);
-    if (err.response) {
-      log?.error?.(`[DingTalk][AICard] 错误响应: status=${err.response.status} data=${JSON.stringify(err.response.data)}`);
-    }
-    return null;
-  }
+  return createAICardForTarget(config, target, log);
 }
 
 // 流式更新 AI Card 内容
@@ -1162,7 +1118,298 @@ type AICardTarget =
   | { type: 'group'; openConversationId: string };
 
 /**
+ * 构建卡片投放请求体（提取公共逻辑）
+ */
+function buildDeliverBody(
+  cardInstanceId: string,
+  target: AICardTarget,
+  robotCode: string,
+): any {
+  const base = { outTrackId: cardInstanceId, userIdType: 1 };
+
+  if (target.type === 'group') {
+    return {
+      ...base,
+      openSpaceId: `dtv1.card//IM_GROUP.${target.openConversationId}`,
+      imGroupOpenDeliverModel: { robotCode },
+    };
+  }
+
+  return {
+    ...base,
+    openSpaceId: `dtv1.card//IM_ROBOT.${target.userId}`,
+    imRobotOpenDeliverModel: { spaceType: 'IM_ROBOT' },
+  };
+}
+
+/**
+ * 通用 AI Card 创建函数
+ * 支持被动回复和主动发送两种场景
+ */
+async function createAICardForTarget(
+  config: any,
+  target: AICardTarget,
+  log?: any,
+): Promise<AICardInstance | null> {
+  const targetDesc = target.type === 'group'
+    ? `群聊 ${target.openConversationId}`
+    : `用户 ${target.userId}`;
+
+  try {
+    const token = await getAccessToken(config);
+    const cardInstanceId = `card_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+    log?.info?.(`[DingTalk][AICard] 开始创建卡片: ${targetDesc}, outTrackId=${cardInstanceId}`);
+
+    // 1. 创建卡片实例
+    const createBody = {
+      cardTemplateId: AI_CARD_TEMPLATE_ID,
+      outTrackId: cardInstanceId,
+      cardData: { cardParamMap: {} },
+      callbackType: 'STREAM',
+      imGroupOpenSpaceModel: { supportForward: true },
+      imRobotOpenSpaceModel: { supportForward: true },
+    };
+
+    log?.info?.(`[DingTalk][AICard] POST /v1.0/card/instances`);
+    const createResp = await axios.post(`${DINGTALK_API}/v1.0/card/instances`, createBody, {
+      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
+    });
+    log?.info?.(`[DingTalk][AICard] 创建卡片响应: status=${createResp.status}`);
+
+    // 2. 投放卡片
+    const deliverBody = buildDeliverBody(cardInstanceId, target, config.clientId);
+
+    log?.info?.(`[DingTalk][AICard] POST /v1.0/card/instances/deliver body=${JSON.stringify(deliverBody)}`);
+    const deliverResp = await axios.post(`${DINGTALK_API}/v1.0/card/instances/deliver`, deliverBody, {
+      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
+    });
+    log?.info?.(`[DingTalk][AICard] 投放卡片响应: status=${deliverResp.status}`);
+
+    return { cardInstanceId, accessToken: token, inputingStarted: false };
+  } catch (err: any) {
+    log?.error?.(`[DingTalk][AICard] 创建卡片失败 (${targetDesc}): ${err.message}`);
+    if (err.response) {
+      log?.error?.(`[DingTalk][AICard] 错误响应: status=${err.response.status} data=${JSON.stringify(err.response.data)}`);
+    }
+    return null;
+  }
+}
+
+/**
+ * 主动发送文件消息（使用普通消息 API）
+ */
+async function sendFileProactive(
+  config: any,
+  target: AICardTarget,
+  fileInfo: FileInfo,
+  mediaId: string,
+  log?: any,
+): Promise<void> {
+  try {
+    const token = await getAccessToken(config);
+
+    // 钉钉普通消息 API 的文件消息格式
+    const msgParam = {
+      mediaId: mediaId,
+      fileName: fileInfo.fileName,
+      fileType: fileInfo.fileType,
+    };
+
+    const body: any = {
+      robotCode: config.clientId,
+      msgKey: 'sampleFile',
+      msgParam: JSON.stringify(msgParam),
+    };
+
+    let endpoint: string;
+    if (target.type === 'group') {
+      body.openConversationId = target.openConversationId;
+      endpoint = `${DINGTALK_API}/v1.0/robot/groupMessages/send`;
+    } else {
+      body.userIds = [target.userId];
+      endpoint = `${DINGTALK_API}/v1.0/robot/oToMessages/batchSend`;
+    }
+
+    log?.info?.(`[DingTalk][File][Proactive] 发送文件消息: ${fileInfo.fileName}`);
+    const resp = await axios.post(endpoint, body, {
+      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
+      timeout: 10_000,
+    });
+
+    if (resp.data?.processQueryKey) {
+      log?.info?.(`[DingTalk][File][Proactive] 文件消息发送成功: ${fileInfo.fileName}`);
+    } else {
+      log?.warn?.(`[DingTalk][File][Proactive] 文件消息发送响应异常: ${JSON.stringify(resp.data)}`);
+    }
+  } catch (err: any) {
+    log?.error?.(`[DingTalk][File][Proactive] 发送文件消息失败: ${fileInfo.fileName}, 错误: ${err.message}`);
+  }
+}
+
+/**
+ * 主动发送场景的文件后处理
+ */
+async function processFileMarkersProactive(
+  content: string,
+  config: any,
+  target: AICardTarget,
+  oapiToken: string | null,
+  log?: any,
+): Promise<string> {
+  if (!oapiToken) {
+    log?.warn?.(`[DingTalk][File][Proactive] 无 oapiToken，跳过文件处理`);
+    return content;
+  }
+
+  const { cleanedContent, fileInfos } = extractFileMarkers(content, log);
+
+  if (fileInfos.length === 0) {
+    return content;
+  }
+
+  log?.info?.(`[DingTalk][File][Proactive] 检测到 ${fileInfos.length} 个文件标记，开始处理...`);
+
+  for (const fileInfo of fileInfos) {
+    const mediaId = await uploadMediaToDingTalk(fileInfo.path, 'file', oapiToken, MAX_FILE_SIZE, log);
+    if (mediaId) {
+      await sendFileProactive(config, target, fileInfo, mediaId, log);
+    } else {
+      log?.error?.(`[DingTalk][File][Proactive] 文件上传失败，跳过发送: ${fileInfo.fileName}`);
+    }
+  }
+
+  return cleanedContent;
+}
+
+/**
+ * 主动发送视频消息（使用普通消息 API）
+ */
+async function sendVideoProactive(
+  config: any,
+  target: AICardTarget,
+  videoMediaId: string,
+  picMediaId: string,
+  metadata: VideoMetadata,
+  log?: any,
+): Promise<void> {
+  try {
+    const token = await getAccessToken(config);
+
+    // 钉钉普通消息 API 的视频消息格式
+    const msgParam = {
+      duration: metadata.duration.toString(),
+      videoMediaId: videoMediaId,
+      videoType: 'mp4',
+      picMediaId: picMediaId,
+    };
+
+    const body: any = {
+      robotCode: config.clientId,
+      msgKey: 'sampleVideo',
+      msgParam: JSON.stringify(msgParam),
+    };
+
+    let endpoint: string;
+    if (target.type === 'group') {
+      body.openConversationId = target.openConversationId;
+      endpoint = `${DINGTALK_API}/v1.0/robot/groupMessages/send`;
+    } else {
+      body.userIds = [target.userId];
+      endpoint = `${DINGTALK_API}/v1.0/robot/oToMessages/batchSend`;
+    }
+
+    log?.info?.(`[DingTalk][Video][Proactive] 发送视频消息`);
+    const resp = await axios.post(endpoint, body, {
+      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
+      timeout: 10_000,
+    });
+
+    if (resp.data?.processQueryKey) {
+      log?.info?.(`[DingTalk][Video][Proactive] 视频消息发送成功`);
+    } else {
+      log?.warn?.(`[DingTalk][Video][Proactive] 视频消息发送响应异常: ${JSON.stringify(resp.data)}`);
+    }
+  } catch (err: any) {
+    log?.error?.(`[DingTalk][Video][Proactive] 发送视频消息失败: ${err.message}`);
+  }
+}
+
+/**
+ * 主动发送场景的视频后处理
+ */
+async function processVideoMarkersProactive(
+  content: string,
+  config: any,
+  target: AICardTarget,
+  oapiToken: string | null,
+  log?: any,
+): Promise<string> {
+  if (!oapiToken) {
+    log?.warn?.(`[DingTalk][Video][Proactive] 无 oapiToken，跳过视频处理`);
+    return content;
+  }
+
+  const fs = await import('fs');
+  const path = await import('path');
+  const os = await import('os');
+
+  const matches = [...content.matchAll(VIDEO_MARKER_PATTERN)];
+  const videoInfos: VideoInfo[] = [];
+
+  for (const match of matches) {
+    try {
+      const videoInfo = JSON.parse(match[1]) as VideoInfo;
+      if (videoInfo.path && fs.existsSync(videoInfo.path)) {
+        videoInfos.push(videoInfo);
+      }
+    } catch (err: any) {
+      log?.warn?.(`[DingTalk][Video][Proactive] 解析标记失败: ${err.message}`);
+    }
+  }
+
+  if (videoInfos.length === 0) {
+    return content.replace(VIDEO_MARKER_PATTERN, '').trim();
+  }
+
+  log?.info?.(`[DingTalk][Video][Proactive] 检测到 ${videoInfos.length} 个视频，开始处理...`);
+
+  for (const videoInfo of videoInfos) {
+    try {
+      const metadata = await extractVideoMetadata(videoInfo.path, log);
+      if (!metadata) continue;
+
+      const thumbnailPath = path.join(os.tmpdir(), `thumbnail_${Date.now()}.jpg`);
+      const thumbnail = await extractVideoThumbnail(videoInfo.path, thumbnailPath, log);
+      if (!thumbnail) {
+        continue;
+      }
+
+      const videoMediaId = await uploadMediaToDingTalk(videoInfo.path, 'video', oapiToken, MAX_VIDEO_SIZE, log);
+      if (!videoMediaId) {
+        fs.unlinkSync(thumbnailPath);
+        continue;
+      }
+
+      const picMediaId = await uploadMediaToDingTalk(thumbnailPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      if (!picMediaId) {
+        fs.unlinkSync(thumbnailPath);
+        continue;
+      }
+
+      await sendVideoProactive(config, target, videoMediaId, picMediaId, metadata, log);
+      fs.unlinkSync(thumbnailPath);
+    } catch (err: any) {
+      log?.error?.(`[DingTalk][Video][Proactive] 处理视频失败: ${err.message}`);
+    }
+  }
+
+  return content.replace(VIDEO_MARKER_PATTERN, '').trim();
+}
+
+/**
  * 主动创建并发送 AI Card（通用内部实现）
+ * 复用 createAICardForTarget 并完整支持后处理
  * @param config 钉钉配置
  * @param target 投放目标（单聊或群聊）
  * @param content 消息内容
@@ -1175,68 +1422,42 @@ async function sendAICardInternal(
   content: string,
   log?: any,
 ): Promise<SendResult> {
-  const isGroup = target.type === 'group';
-  const targetId = isGroup ? target.openConversationId : target.userId;
-  const targetDesc = isGroup ? `群聊 ${targetId}` : `用户 ${targetId}`;
+  const targetDesc = target.type === 'group'
+    ? `群聊 ${target.openConversationId}`
+    : `用户 ${target.userId}`;
 
   try {
-    const token = await getAccessToken(config);
-    const cardInstanceId = `card_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-    log?.info?.(`[DingTalk][AICard][Proactive] 开始创建卡片: ${targetDesc}, outTrackId=${cardInstanceId}`);
-
-    // 0. 图片后处理：上传本地图片到钉钉，替换路径为 media_id
-    let processedContent = content;
+    // 0. 获取 oapiToken 用于后处理
     const oapiToken = await getOapiAccessToken(config);
+
+    // 1. 后处理01：上传本地图片到钉钉，替换路径为 media_id
+    let processedContent = content;
     if (oapiToken) {
-      log?.info?.(`[DingTalk][AICard][Proactive] 开始图片后处理，内容片段="${content.slice(0, 200)}..."`);
+      log?.info?.(`[DingTalk][AICard][Proactive] 开始图片后处理`);
       processedContent = await processLocalImages(content, oapiToken, log);
     } else {
-      log?.warn?.(`[DingTalk][AICard][Proactive] 无法获取 oapiToken，跳过图片后处理`);
+      log?.warn?.(`[DingTalk][AICard][Proactive] 无法获取 oapiToken，跳过媒体后处理`);
     }
 
-    // 1. 创建卡片实例
-    const createBody = {
-      cardTemplateId: AI_CARD_TEMPLATE_ID,
-      outTrackId: cardInstanceId,
-      cardData: { cardParamMap: {} },
-      callbackType: 'STREAM',
-      imGroupOpenSpaceModel: { supportForward: true },
-      imRobotOpenSpaceModel: { supportForward: true },
-    };
+    // 2. 后处理02：提取文件标记并发送独立文件消息
+    log?.info?.(`[DingTalk][File][Proactive] 开始文件后处理`);
+    processedContent = await processFileMarkersProactive(processedContent, config, target, oapiToken, log);
 
-    log?.info?.(`[DingTalk][AICard][Proactive] POST /v1.0/card/instances`);
-    const createResp = await axios.post(`${DINGTALK_API}/v1.0/card/instances`, createBody, {
-      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
-    });
-    log?.info?.(`[DingTalk][AICard][Proactive] 创建卡片响应: status=${createResp.status}`);
+    // 3. 后处理03：提取视频标记并发送视频消息
+    log?.info?.(`[DingTalk][Video][Proactive] 开始视频后处理`);
+    processedContent = await processVideoMarkersProactive(processedContent, config, target, oapiToken, log);
 
-    // 2. 投放卡片
-    const deliverBody: any = {
-      outTrackId: cardInstanceId,
-      userIdType: 1,
-    };
-
-    if (isGroup) {
-      deliverBody.openSpaceId = `dtv1.card//IM_GROUP.${target.openConversationId}`;
-      deliverBody.imGroupOpenDeliverModel = { robotCode: config.clientId };
-    } else {
-      deliverBody.openSpaceId = `dtv1.card//IM_ROBOT.${target.userId}`;
-      deliverBody.imRobotOpenDeliverModel = { spaceType: 'IM_ROBOT' };
+    // 4. 创建卡片（复用通用函数）
+    const card = await createAICardForTarget(config, target, log);
+    if (!card) {
+      return { ok: false, error: 'Failed to create AI Card', usedAICard: false };
     }
 
-    log?.info?.(`[DingTalk][AICard][Proactive] POST /v1.0/card/instances/deliver`);
-    const deliverResp = await axios.post(`${DINGTALK_API}/v1.0/card/instances/deliver`, deliverBody, {
-      headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
-    });
-    log?.info?.(`[DingTalk][AICard][Proactive] 投放卡片响应: status=${deliverResp.status}`);
-
-    // 3. 使用 finishAICard 流程来设置内容（必须通过 streaming API）
-    const card: AICardInstance = { cardInstanceId, accessToken: token, inputingStarted: false };
+    // 5. 使用 finishAICard 设置内容
     await finishAICard(card, processedContent, log);
 
-    log?.info?.(`[DingTalk][AICard][Proactive] AI Card 发送成功: ${targetDesc}, cardInstanceId=${cardInstanceId}`);
-    return { ok: true, cardInstanceId, usedAICard: true };
+    log?.info?.(`[DingTalk][AICard][Proactive] AI Card 发送成功: ${targetDesc}, cardInstanceId=${card.cardInstanceId}`);
+    return { ok: true, cardInstanceId: card.cardInstanceId, usedAICard: true };
 
   } catch (err: any) {
     log?.error?.(`[DingTalk][AICard][Proactive] AI Card 发送失败 (${targetDesc}): ${err.message}`);
