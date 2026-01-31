@@ -2066,8 +2066,9 @@ const dingtalkPlugin = {
     normalizeTarget: ({ target }: any) =>
       target ? { targetId: target.replace(/^(dingtalk-connector|dingtalk|dd|ding):/i, '') } : null,
     targetResolver: {
-      looksLikeId: (id: string) => /^[\w-]+$/.test(id),
-      hint: '<conversationId>',
+      // 支持普通 ID、Base64 编码的 conversationId，以及 user:/group: 前缀格式
+      looksLikeId: (id: string) => /^(user:|group:)?[\w+/=-]+$/.test(id),
+      hint: 'user:<userId> 或 group:<conversationId>',
     },
   },
   outbound: {
