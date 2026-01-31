@@ -31,6 +31,38 @@ interface UserSession {
 /** 用户会话缓存 Map<senderId, UserSession> */
 const userSessions = new Map<string, UserSession>();
 
+/** 消息去重缓存 Map<messageId, timestamp> - 防止同一消息被重复处理 */
+const processedMessages = new Map<string, number>();
+
+/** 消息去重缓存过期时间（5分钟） */
+const MESSAGE_DEDUP_TTL = 5 * 60 * 1000;
+
+/** 清理过期的消息去重缓存 */
+function cleanupProcessedMessages(): void {
+  const now = Date.now();
+  for (const [msgId, timestamp] of processedMessages.entries()) {
+    if (now - timestamp > MESSAGE_DEDUP_TTL) {
+      processedMessages.delete(msgId);
+    }
+  }
+}
+
+/** 检查消息是否已处理过（去重） */
+function isMessageProcessed(messageId: string): boolean {
+  if (!messageId) return false;
+  return processedMessages.has(messageId);
+}
+
+/** 标记消息为已处理 */
+function markMessageProcessed(messageId: string): void {
+  if (!messageId) return;
+  processedMessages.set(messageId, Date.now());
+  // 定期清理（每处理100条消息清理一次）
+  if (processedMessages.size % 100 === 0) {
+    cleanupProcessedMessages();
+  }
+}
+
 /** 新会话触发命令 */
 const NEW_SESSION_COMMANDS = ['/new', '/reset', '/clear', '新会话', '重新开始', '清空对话'];
 
@@ -1931,9 +1963,29 @@ const dingtalkPlugin = {
       });
 
       client.registerCallbackListener(TOPIC_ROBOT, async (res: any) => {
+        const messageId = res.headers?.messageId;
+        ctx.log?.info?.(`[DingTalk] 收到 Stream 回调, messageId=${messageId}, headers=${JSON.stringify(res.headers)}`);
+
+        // 【关键修复】立即确认回调，避免钉钉服务器因超时而重发
+        // 钉钉 Stream 模式要求及时响应，否则约60秒后会重发消息
+        if (messageId) {
+          client.socketCallBackResponse(messageId, { success: true });
+          ctx.log?.info?.(`[DingTalk] 已立即确认回调: messageId=${messageId}`);
+        }
+
+        // 【消息去重】检查是否已处理过该消息
+        if (messageId && isMessageProcessed(messageId)) {
+          ctx.log?.warn?.(`[DingTalk] 检测到重复消息，跳过处理: messageId=${messageId}`);
+          return;
+        }
+
+        // 标记消息为已处理
+        if (messageId) {
+          markMessageProcessed(messageId);
+        }
+
+        // 异步处理消息（不阻塞回调确认）
         try {
-          const messageId = res.headers?.messageId;
-          ctx.log?.info?.(`[DingTalk] 收到 Stream 回调, messageId=${messageId}, headers=${JSON.stringify(res.headers)}`);
           ctx.log?.info?.(`[DingTalk] 原始 data: ${typeof res.data === 'string' ? res.data.slice(0, 500) : JSON.stringify(res.data).slice(0, 500)}`);
           const data = JSON.parse(res.data);
 
@@ -1945,12 +1997,9 @@ const dingtalkPlugin = {
             log: ctx.log,
             dingtalkConfig: config,
           });
-
-          if (messageId) client.socketCallBackResponse(messageId, { success: true });
         } catch (error: any) {
           ctx.log?.error?.(`[DingTalk] 处理消息异常: ${error.message}`);
-          const messageId = res.headers?.messageId;
-          if (messageId) client.socketCallBackResponse(messageId, { success: false });
+          // 注意：即使处理失败，也不需要再次响应（已经提前确认了）
         }
       });
 
