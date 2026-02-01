@@ -551,7 +551,7 @@ async function sendVideoMessage(
 }
 
 /**
- * 视频后处理主函数
+ * 视频后处理主函数（使用 sessionWebhook，传统被动回复场景）
  */
 async function processVideoMarkers(
   content: string,
@@ -812,6 +812,9 @@ async function sendAudioMessage(
 
 /**
  * 处理文件标记：提取、上传、发送独立消息
+ * 
+ * @param useProactiveApi 是否使用主动消息 API（用于 AI Card 场景，避免 sessionWebhook 失效问题）
+ * @param target 主动 API 需要的目标信息（useProactiveApi=true 时必须提供）
  */
 async function processFileMarkers(
   content: string,
@@ -819,6 +822,8 @@ async function processFileMarkers(
   config: any,
   oapiToken: string | null,
   log?: any,
+  useProactiveApi: boolean = false,
+  target?: AICardTarget,
 ): Promise<string> {
   if (!oapiToken) {
     log?.warn?.(`[DingTalk][File] 无 oapiToken，跳过文件处理`);
@@ -832,7 +837,7 @@ async function processFileMarkers(
     return content;
   }
 
-  log?.info?.(`[DingTalk][File] 检测到 ${fileInfos.length} 个文件标记，开始处理...`);
+  log?.info?.(`[DingTalk][File] 检测到 ${fileInfos.length} 个文件标记，开始处理... (useProactiveApi=${useProactiveApi})`);
 
   // 逐个上传并发送文件消息
   for (const fileInfo of fileInfos) {
@@ -841,7 +846,13 @@ async function processFileMarkers(
       // 音频文件使用 voice 类型上传
       const mediaId = await uploadMediaToDingTalk(fileInfo.path, 'voice', oapiToken, MAX_FILE_SIZE, log);
       if (mediaId) {
-        await sendAudioMessage(config, sessionWebhook, fileInfo, mediaId, oapiToken, log);
+        if (useProactiveApi && target) {
+          // 使用主动消息 API（适用于 AI Card 场景）
+          await sendAudioProactive(config, target, fileInfo, mediaId, log);
+        } else {
+          // 使用 sessionWebhook（传统被动回复场景）
+          await sendAudioMessage(config, sessionWebhook, fileInfo, mediaId, oapiToken, log);
+        }
       } else {
         log?.error?.(`[DingTalk][Audio] 音频上传失败，跳过发送: ${fileInfo.fileName}`);
       }
@@ -849,7 +860,13 @@ async function processFileMarkers(
       // 普通文件
       const mediaId = await uploadMediaToDingTalk(fileInfo.path, 'file', oapiToken, MAX_FILE_SIZE, log);
       if (mediaId) {
-        await sendFileMessage(config, sessionWebhook, fileInfo, mediaId, oapiToken, log);
+        if (useProactiveApi && target) {
+          // 使用主动消息 API（适用于 AI Card 场景）
+          await sendFileProactive(config, target, fileInfo, mediaId, log);
+        } else {
+          // 使用 sessionWebhook（传统被动回复场景）
+          await sendFileMessage(config, sessionWebhook, fileInfo, mediaId, oapiToken, log);
+        }
       } else {
         log?.error?.(`[DingTalk][File] 文件上传失败，跳过发送: ${fileInfo.fileName}`);
       }
@@ -2030,13 +2047,19 @@ async function handleDingTalkMessage(params: {
       log?.info?.(`[DingTalk][Media] 开始图片后处理，内容片段="${accumulated.slice(0, 200)}..."`);
       accumulated = await processLocalImages(accumulated, oapiToken, log);
 
-      // 后处理02：提取文件标记并发送独立文件消息
-      log?.info?.(`[DingTalk][File] 开始文件后处理`);
-      accumulated = await processFileMarkers(accumulated, sessionWebhook, dingtalkConfig, oapiToken, log);
+      // 【关键修复】AI Card 场景使用主动消息 API 发送文件/视频，避免 sessionWebhook 失效问题
+      // 构建目标信息用于主动 API（isDirect 已在上面定义）
+      const proactiveTarget: AICardTarget = isDirect
+        ? { type: 'user', userId: data.senderStaffId || data.senderId }
+        : { type: 'group', openConversationId: data.conversationId };
 
-      // 后处理03：提取视频标记并发送视频消息
-      log?.info?.(`[DingTalk][Video] 开始视频后处理`);
-      accumulated = await processVideoMarkers(accumulated, sessionWebhook, dingtalkConfig, oapiToken, log);
+      // 后处理02：提取文件标记并发送独立文件消息（使用主动消息 API）
+      log?.info?.(`[DingTalk][File] 开始文件后处理 (使用主动API，目标=${JSON.stringify(proactiveTarget)})`);
+      accumulated = await processFileMarkers(accumulated, sessionWebhook, dingtalkConfig, oapiToken, log, true, proactiveTarget);
+
+      // 后处理03：提取视频标记并发送视频消息（使用主动消息 API）
+      log?.info?.(`[DingTalk][Video] 开始视频后处理 (使用主动API)`);
+      accumulated = await processVideoMarkersProactive(accumulated, dingtalkConfig, proactiveTarget, oapiToken, log);
 
       // 完成 AI Card
       await finishAICard(card, accumulated, log);
