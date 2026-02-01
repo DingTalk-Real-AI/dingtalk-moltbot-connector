@@ -8,3 +8,5 @@ build/
 *.egg
 node_modules/
 package-lock.json
+
+openclaw/
