@@ -45,6 +45,7 @@
     "test:unit": "vitest run tests/gateway-methods.unit.test.ts",
     "test:integration": "vitest run tests/gateway-methods.unit.test.ts",
     "test:all": "vitest run",
+    "test:feedback": "tsx tests/simulate-dingtalk.ts --verify-feedback",
     "test:watch": "vitest watch",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage --exclude tests/gateway-methods.test.ts",

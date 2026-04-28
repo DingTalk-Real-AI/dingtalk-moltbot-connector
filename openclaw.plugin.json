@@ -233,6 +233,21 @@
           "ackText": {
             "type": "string"
           },
+          "cardTemplateId": {
+            "type": "string"
+          },
+          "cardTemplateKey": {
+            "type": "string"
+          },
+          "cardLikeActionId": {
+            "type": "string"
+          },
+          "cardDislikeActionId": {
+            "type": "string"
+          },
+          "cardFeedbackStatusKey": {
+            "type": "string"
+          },
           "endpoint": {
             "type": "string"
           },
@@ -456,6 +471,21 @@
                   "type": "boolean"
                 },
                 "ackText": {
+                  "type": "string"
+                },
+                "cardTemplateId": {
+                  "type": "string"
+                },
+                "cardTemplateKey": {
+                  "type": "string"
+                },
+                "cardLikeActionId": {
+                  "type": "string"
+                },
+                "cardDislikeActionId": {
+                  "type": "string"
+                },
+                "cardFeedbackStatusKey": {
                   "type": "string"
                 },
                 "endpoint": {
