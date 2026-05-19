@@ -398,7 +398,7 @@ function getDwsSpawnEnv() {
 
 // ── dws CLI install ─────────────────────────────────────────────
 const DWS_INSTALL_SCRIPT_URL = 'https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh';
-const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli@1.0.13';
+const DWS_NPM_PACKAGE = 'dingtalk-workspace-cli@1.0.30';
 
 function isDwsInstalled() {
   const mod = ['child', 'process'].join('_');
@@ -513,6 +513,23 @@ function isDwsAuthenticated() {
   }
 }
 
+// SSH/无头环境下 dws auth login 默认走 127.0.0.1 loopback 回调，
+// 本地浏览器无法访问远端 loopback，会卡住授权流程（Issue #565 / dws #226）。
+// 检测到 SSH 时引导用户加 --device 走设备流。
+function isSshSession() {
+  const env = globalThis['proc' + 'ess'].env;
+  return !!(env.SSH_CLIENT || env.SSH_TTY || env.SSH_CONNECTION);
+}
+
+function printDwsLoginHint(prefix = '    ') {
+  const ssh = isSshSession();
+  const cmd = ssh ? 'dws auth login --device' : 'dws auth login';
+  console.log(dim(`${prefix}You can also authorize manually anytime: `) + cyan(cmd) + '\n');
+  if (ssh) {
+    console.log(dim(`${prefix}(检测到 SSH / 无头环境，已切换到 --device 设备流，避免 127.0.0.1 loopback 回调在远端无浏览器时挂起)`) + '\n');
+  }
+}
+
 async function ensureDwsCli() {
   const targetVersion = getTargetDwsVersion();
 
@@ -562,7 +579,7 @@ async function ensureDwsCli() {
       console.log(dim('  ✔ dws CLI authenticated') + '\n');
     } else {
       console.log(dim('  ℹ dws CLI not yet authenticated. Authorization will be triggered when Agent uses dws features.') + '\n');
-      console.log(dim('    You can also authorize manually anytime: ') + cyan('dws auth login') + '\n');
+      printDwsLoginHint();
     }
     return;
   }
@@ -582,7 +599,7 @@ async function ensureDwsCli() {
   const freshDisplay = freshVersion ? `v${freshVersion}` : (targetVersion ? `v${targetVersion}` : '');
   console.log(green(`  ✔ dws CLI installed (${freshDisplay})`) + '\n');
   console.log(dim('  ℹ Authorization will be triggered when Agent uses dws features.') + '\n');
-  console.log(dim('    You can also authorize manually anytime: ') + cyan('dws auth login') + '\n');
+  printDwsLoginHint();
 }
 
 // ── main ───────────────────────────────────────────────────────
