@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.21] - 2026-05-19
+
+晋升自 `0.8.21-beta.0` 的 GA 版本，与 beta.0 内容完全一致，经过社区验证后正式发布。  
+GA promotion of `0.8.21-beta.0` after community validation; functionally identical to the beta.
+
+### 升级 / Upgrade
+
+\`\`\`bash
+npx openclaw@latest add @dingtalk-real-ai/dingtalk-connector@0.8.21
+\`\`\`
+
+以下内容沿用自 `0.8.21-beta.0` 的修复与改进 / Same fixes and improvements as `0.8.21-beta.0`：
+
 ## [0.8.21-beta.0] - 2026-05-17
 
 ### 修复 / Fixes
