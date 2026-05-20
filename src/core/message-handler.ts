@@ -1579,7 +1579,8 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
 
         // ✅ 异步模式下 final 文本为空时的兜底
         // 群聊场景下，常见根因是 OpenClaw `messages.groupChat.visibleReplies` 未设为 "automatic"
-        // （详见 src/utils/empty-reply.ts），给运维一份可操作的指引而不是无信息量的「任务执行完成」。
+        // （详见 src/utils/empty-reply.ts），给运维一份可操作的指引；
+        // 单聊则用口语化确认语兜底，避免被用户误判为报错。
         let textToSend = finalText.trim();
         if (!textToSend) {
           const isGroup = !isDirect;

@@ -4,7 +4,8 @@
  * 群聊空 final 常由 OpenClaw `messages.groupChat.visibleReplies` 未设为 "automatic"
  * 触发；本测试锁定兜底文案的分流契约：
  *   - 群聊：必须给出可操作的修复指引，至少包含 visibleReplies / automatic 关键字
- *   - 单聊：保持原文案 "✅ 任务执行完成（无文本输出）"
+ *   - 单聊：用口语化确认语兜底，避免「任务执行完成（无文本输出）」让用户误判为报错；
+ *           不应再出现「任务执行完成」「无文本输出」「无输出」等带技术味的字样
  *   - 日志 hint：要包含 openclaw.json 片段和 messages.groupChat 关键字
  */
 import { describe, it, expect } from 'vitest';
@@ -15,16 +16,30 @@ import {
 } from '../src/utils/empty-reply.ts';
 
 describe('pickEmptyReplyFallbackText', () => {
-  it('单聊保持原"任务执行完成（无文本输出）"文案', () => {
+  it('单聊兜底文案不再出现「任务执行完成」/「无文本输出」等报错感字样', () => {
     const text = pickEmptyReplyFallbackText(false);
-    expect(text).toBe('✅ 任务执行完成（无文本输出）');
+    expect(text).not.toContain('任务执行完成');
+    expect(text).not.toContain('无文本输出');
+    expect(text).not.toContain('无输出');
+  });
+
+  it('单聊兜底文案是口语化确认语并邀请继续提问', () => {
+    const text = pickEmptyReplyFallbackText(false);
+    // 用「好」开头的口语化确认（"好的" / "好嘞" 等），并包含可继续追问的引导
+    expect(text).toMatch(/^好/);
+    expect(text).toMatch(/(找我|问我|继续|有.*问题)/);
   });
 
   it('群聊给出包含 visibleReplies / automatic 的修复指引', () => {
     const text = pickEmptyReplyFallbackText(true);
     expect(text).toContain('visibleReplies');
     expect(text).toContain('automatic');
-    expect(text).not.toBe('✅ 任务执行完成（无文本输出）');
+  });
+
+  it('群聊文案与单聊不同（确保分流生效）', () => {
+    const direct = pickEmptyReplyFallbackText(false);
+    const group = pickEmptyReplyFallbackText(true);
+    expect(group).not.toBe(direct);
   });
 
   it('群聊文案不抛配置细节给终端用户，要建议联系管理员', () => {

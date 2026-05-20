@@ -308,8 +308,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // ✅ 如果累积的文本为空，使用默认提示文案
       // 群聊场景下，常见根因是 OpenClaw `messages.groupChat.visibleReplies` 未设为
       // "automatic"（上游 source-reply-delivery-mode.ts 走 message_tool_only 时
-      // 会跳过 onPartialReply，accumulatedText 始终为空）。给运维一份可操作的指引，
-      // 而不是一句无信息量的「任务执行完成」。详见 src/utils/empty-reply.ts。
+      // 会跳过 onPartialReply，accumulatedText 始终为空）。给运维一份可操作的指引；
+      // 单聊则用口语化确认语兜底，避免「任务执行完成（无文本输出）」让用户误判为报错。
+      // 详见 src/utils/empty-reply.ts。
       if (!finalText.trim()) {
         const isGroup = !isDirect;
         finalText = pickEmptyReplyFallbackText(isGroup);

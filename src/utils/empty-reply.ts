@@ -3,7 +3,7 @@
  *
  * 背景
  * ----
- * 群聊场景下用户 @ 机器人后看到「任务执行完成（无文本输出）」，常见根因不是 connector，
+ * 群聊场景下用户 @ 机器人后看到空回复兜底文案，常见根因不是 connector，
  * 而是上游 OpenClaw 的 reply delivery mode（`source-reply-delivery-mode.ts`）：群聊
  * 默认走 `message_tool_only`，会跳过 `onPartialReply` 与 `accumulatedText`，
  * 导致本插件累积的文本始终为空，最后落到 connector 的空回复兜底。
@@ -15,12 +15,14 @@
  *     }
  *   }
  *
- * 本模块的优化目标：让群聊场景看到的兜底文案变成一句可操作的提示，
- * 并在日志里给运维一份完整指引，而不是一句无信息量的「任务执行完成」。
- * 单聊场景的兜底文案保持原样（单聊空 final 通常是模型自身输出空）。
+ * 本模块的优化目标：让兜底文案在两种场景下都自然不"像报错"——
+ *   - 群聊：返回一段可操作的运维指引（指向 `messages.groupChat.visibleReplies`）。
+ *   - 单聊：返回一段口语化的简短确认语（单聊空 final 通常是模型自身没产出文本，
+ *     如纯思考、只走 tool_call、对 ACK 类输入选择沉默等），并隐含邀请用户继续提问，
+ *     避免历史上的「✅ 任务执行完成（无文本输出）」让用户误以为是报错。
  */
 
-const DIRECT_FALLBACK_TEXT = '✅ 任务执行完成（无文本输出）';
+const DIRECT_FALLBACK_TEXT = '好的 👌 有其他问题随时找我';
 
 const GROUP_FALLBACK_TEXT = [
   'ℹ️ 暂未收到模型回复内容。',
