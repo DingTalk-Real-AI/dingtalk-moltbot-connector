@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.22-beta.0] - 2026-05-21
+
+> **社区验证版本** — 计划 2-3 天观察期后晋升为 `v0.8.22`。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.22-beta.0.md)。
+> Community validation release — planned to promote to `v0.8.22` after a 2-3 day observation window.
+
+### 改进 / Improvements
+
+- ✨ **单聊空回复 UX 文案优化 (#599 / #601)** — 把 `✅ 任务执行完成（无文本输出）` 改为口语化的 `好的 👌 有其他问题随时找我`，避免被用户误判为报错。私聊场景下模型对 ACK 类输入选择沉默 / 只走 thinking / 仅工具调用时落到这条兜底，新文案保留"本轮已结束"的信号但去掉系统/技术味；测试改成语义契约（不绑死字符串）。群聊兜底文案与日志 hint 不变。
+  **Soften direct-chat empty-reply fallback (#599 / #601)** — Replace `✅ 任务执行完成（无文本输出）` with the conversational `好的 👌 有其他问题随时找我`. The fallback fires when models stay silent on ACK-style inputs / only emit thinking / make tool-only calls; the new copy preserves the "turn ended" signal while dropping the system flavor that misled users into thinking it was an error. Tests refactored to semantic contracts.
+
+- ✨ **dws onboarding SSH 兼容 + 版本升级 (#565 / #598)** — `DWS_NPM_PACKAGE` 从 `1.0.13` 升到 npm 最新 `1.0.30`，新装用户拿到 dws #226 修过的 `--help` 文案。onboarding 检测 SSH / 无头环境（`SSH_CLIENT` / `SSH_TTY` / `SSH_CONNECTION`）后，自动把建议命令换成 `dws auth login --device`，避免 127.0.0.1 loopback 在无浏览器服务器上挂死。跨仓根治追踪在 [dws #327](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/issues/327)。
+  **dws onboarding SSH compatibility + version bump (#565 / #598)** — Bump `DWS_NPM_PACKAGE` from `1.0.13` to npm latest `1.0.30` so new installs get the dws #226 docs fix. Onboarding now detects SSH / headless env (`SSH_CLIENT` / `SSH_TTY` / `SSH_CONNECTION`) and auto-suggests `dws auth login --device` to avoid 127.0.0.1 loopback hangs on browserless servers. Cross-repo root fix tracked at [dws #327](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/issues/327).
+
 ## [0.8.21] - 2026-05-19
 
 晋升自 `0.8.21-beta.0` 的 GA 版本，与 beta.0 内容完全一致，经过社区验证后正式发布。  
