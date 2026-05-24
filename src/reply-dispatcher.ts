@@ -95,7 +95,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   const log = createLoggerFromConfig(account.config, `DingTalk:${accountId}`);
 
   // AI Card 状态管理
-  let currentCardTarget: AICardTarget | null = null;
+  let currentCardTarget: AICardInstance | null = null;
   let accumulatedText = "";
   const deliveredFinalTexts = new Set<string>();
 
@@ -247,7 +247,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // 这样用户看到的是同一条消息从 ACK 文案更新为最终结果，而不是多出一条消息
       if (preCreatedCard) {
         log.info(`[DingTalk][startStreaming] 复用预创建 AI Card，cardInstanceId=${preCreatedCard.cardInstanceId}`);
-        currentCardTarget = preCreatedCard as any;
+        currentCardTarget = preCreatedCard;
         accumulatedText = "";
         outboundUserVisibleThisTurn = true;
         return;
@@ -267,7 +267,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           target,
           log
         );
-        currentCardTarget = card as any;
+        currentCardTarget = card;
         accumulatedText = "";
 
         if (card) {
@@ -288,6 +288,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   };
 
   const closeStreaming: () => Promise<void> = async () => {
+    const pendingCardCreation = cardCreationPromise;
+    if (!currentCardTarget && pendingCardCreation) {
+      log.info(`[DingTalk][closeStreaming] AI Card 仍在创建中，等待创建完成后再关闭`);
+      await pendingCardCreation;
+    }
+
     // 立即捕获并清空，防止并发调用重复执行（竞争条件保护）
     // closeStreaming 可能被 onIdle 和 onError 同时触发，若不在此处清空，
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
@@ -418,7 +424,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       log.info(`[DingTalk][closeStreaming] 准备调用 finishAICard，文本长度=${finalText.length}`);
       log.debug(`[DingTalk][closeStreaming] 最终发送内容长度=${finalText.length}`);
       await finishAICard(
-        cardSnapshot as any,
+        cardSnapshot,
         finalText,
         account.config as DingtalkConfig,
         log
@@ -613,7 +619,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               lastUpdateTime = now;
               try {
                 await streamAICard(
-                  currentCardTarget as any,
+                  currentCardTarget,
                   text,
                   false,
                   account.config as DingtalkConfig,
@@ -775,7 +781,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             lastUpdateTime = now;
             try {
               await streamAICard(
-                currentCardTarget as any,
+                currentCardTarget,
                 displayContent,
                 false,
                 account.config as DingtalkConfig,

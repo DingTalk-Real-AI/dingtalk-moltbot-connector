@@ -158,6 +158,51 @@ describe("reply-dispatcher", () => {
     expect(typeof result.getAsyncModeResponse()).toBe("string");
   });
 
+  it("waits for pending AI Card creation before closing on idle", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const runtime = {
+      log: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    let resolveCard!: (card: any) => void;
+    const pendingCard = new Promise<any>((resolve) => {
+      resolveCard = resolve;
+    });
+    mockCreateAICardForTarget.mockReturnValueOnce(pendingCard);
+
+    createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: runtime as any,
+      conversationId: "conv-1",
+      senderId: "user-1",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+
+    const args = (globalThis as any).__dispatcherArgs;
+    args.onReplyStart();
+
+    const idlePromise = args.onIdle();
+    await Promise.resolve();
+
+    expect(mockFinishAICard).not.toHaveBeenCalled();
+
+    resolveCard({
+      cardInstanceId: "slow-card",
+      accessToken: "tk",
+      inputingStarted: false,
+    });
+    await idlePromise;
+
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockFinishAICard.mock.calls[0]?.[0]?.cardInstanceId).toBe("slow-card");
+  });
+
   it("asyncMode accumulates final response without streaming", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
     const runtime = {
