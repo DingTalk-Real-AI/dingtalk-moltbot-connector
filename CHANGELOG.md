@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.22] - 2026-05-24
+
+晋升自 `0.8.22-beta.0` 的 GA 版本，与 beta.0 内容完全一致，经过 ~3 天社区验证（无回归反馈）后正式发布。
+GA promotion of `0.8.22-beta.0` after ~3 days of community validation with no regression; functionally identical to the beta.
+
+### 升级 / Upgrade
+
+```bash
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.22
+openclaw gateway restart
+```
+
+以下内容沿用自 `0.8.22-beta.0` 的改进 / Same improvements as `0.8.22-beta.0`：
+
 ## [0.8.22-beta.0] - 2026-05-21
 
 > **社区验证版本** — 计划 2-3 天观察期后晋升为 `v0.8.22`。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.22-beta.0.md)。
