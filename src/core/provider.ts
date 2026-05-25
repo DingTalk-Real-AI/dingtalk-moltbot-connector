@@ -92,14 +92,28 @@ export async function monitorDingtalkProvider(opts: MonitorDingtalkOpts = {}): P
     }
 
     monitorPromises.push(
-      monitorSingleAccount({
-        cfg,
-        account,
-        runtime: opts.runtime,
-        abortSignal: opts.abortSignal,
-        messageHandler: handleDingTalkMessage,
-        onStatusChange: opts.onStatusChange,
-      }),
+      (async () => {
+        try {
+          await monitorSingleAccount({
+            cfg,
+            account,
+            runtime: opts.runtime,
+            abortSignal: opts.abortSignal,
+            messageHandler: handleDingTalkMessage,
+            onStatusChange: opts.onStatusChange,
+          });
+        } catch (err: any) {
+          // 检查是否为永久错误（如认证失败）
+          if ((err as any).isPermanent) {
+            log?.error?.(
+              `[dingtalk-connector] Account ${account.accountId} stopped due to permanent error: ${err.message}`
+            );
+            return; // 跳过该账号，不阻止其他账号
+          }
+          // 非永久错误继续抛出
+          throw err;
+        }
+      })(),
     );
   }
 

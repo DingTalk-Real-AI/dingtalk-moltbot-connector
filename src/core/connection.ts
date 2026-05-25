@@ -347,6 +347,15 @@ export async function monitorSingleAccount(
       logger.error(
         `重连失败：${err.message} (尝试 ${reconnectAttempts})`,
       );
+      
+      // 检测永久认证错误，停止重连
+      if (err.response?.status === 401 || err.response?.status === 400 ||
+          err.message?.includes("401") || err.message?.includes("400")) {
+        logger.error(`❌ 认证失败：凭据无效，停止重连。请检查 clientId 和 clientSecret。`);
+        isStopped = true;
+        return;
+      }
+      
       throw err;
     } finally {
       isReconnecting = false;
@@ -736,7 +745,7 @@ export async function monitorSingleAccount(
 
       // 处理 400 错误（请求参数错误）
       if (error.response?.status === 400 || error.message?.includes("status code 400") || error.message?.includes("400")) {
-        reject(new Error(
+        const badRequestError = new Error(
           `[DingTalk][${accountId}] Bad Request (400):\n` +
             `  - clientId or clientSecret format is invalid\n` +
             `  - clientId: ${clientIdStr} (type: ${typeof account.clientId}, length: ${clientIdStr.length})\n` +
@@ -748,19 +757,23 @@ export async function monitorSingleAccount(
             `    4. Check if clientId starts with 'ding' prefix\n` +
             `  - Error details: ${error.message}\n` +
             `  - Response data: ${JSON.stringify(error.response?.data || {})}`,
-        ));
+        );
+        (badRequestError as any).isPermanent = true;
+        reject(badRequestError);
         return;
       }
 
       // 处理 401 认证错误
       if (error.response?.status === 401 || error.message?.includes("401")) {
-        reject(new Error(
+        const authError = new Error(
           `[DingTalk][${accountId}] Authentication failed (401 Unauthorized):\n` +
             `  - Your clientId or clientSecret is invalid, expired, or revoked\n` +
             `  - clientId: ${clientIdStr.substring(0, 8)}...\n` +
             `  - Please verify your credentials at DingTalk Developer Console\n` +
             `  - Error details: ${error.message}`,
-        ));
+        );
+        (authError as any).isPermanent = true;
+        reject(authError);
         return;
       }
 

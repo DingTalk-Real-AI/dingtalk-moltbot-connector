@@ -527,6 +527,13 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       } catch (err: any) {
         // 打印真实错误到 stderr，绕过框架 log 系统（框架的 runtime.log 可能未初始化）
         ctx.log?.error(`[dingtalk-connector][${ctx.accountId}] startAccount error: ${err?.message ?? err}\n${err?.stack ?? ''}`);
+        
+        // 检查是否为永久错误（如认证失败）
+        if ((err as any).isPermanent) {
+          ctx.log?.error(`[dingtalk-connector][${ctx.accountId}] Permanent error detected, keeping process running`);
+          return; // 永久错误不重新抛出，避免进程崩溃
+        }
+        
         throw err;
       }
     },

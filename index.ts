@@ -74,4 +74,20 @@ export default function register(api: OpenClawPluginApi) {
   initDingtalkPluginConfigSchema();
   api.registerChannel({ plugin: dingtalkPlugin });
   registerGatewayMethods(api);
+  
+  // 添加全局未处理 Promise Rejection 处理器，防止认证错误导致进程崩溃
+  process.on('unhandledRejection', (reason: any) => {
+    if (reason?.message?.includes('Authentication failed') || 
+        reason?.message?.includes('401') ||
+        reason?.message?.includes('Bad Request (400)')) {
+      console.error(
+        '[dingtalk-connector] ⚠️ 认证错误，避免无限重启循环。' +
+        '请检查配置后手动重启。'
+      );
+      // 不抛出，让进程继续运行
+      return;
+    }
+    // 其他未处理的 rejection 继续传播
+    console.error('[dingtalk-connector] Unhandled Promise Rejection:', reason);
+  });
 }
