@@ -355,6 +355,21 @@ describe('Card Gateway Methods - 参数验证', () => {
       ['user:user_123', { type: 'user', userId: 'user_123' }, 'user:user_123'],
       ['group:cid-group_123', { type: 'group', openConversationId: 'cid-group_123' }, 'group:cid-group_123'],
       ['cid_direct_123', { type: 'group', openConversationId: 'cid_direct_123' }, 'group:cid_direct_123'],
+      [
+        'cidLY0TRpE+Ka//RsguNtQnHw==',
+        { type: 'group', openConversationId: 'cidLY0TRpE+Ka//RsguNtQnHw==' },
+        'group:cidLY0TRpE+Ka//RsguNtQnHw==',
+      ],
+      [
+        'cid=26896013',
+        { type: 'group', openConversationId: 'cid=26896013' },
+        'group:cid=26896013',
+      ],
+      [
+        'group:cidLY0TRpE+Ka//RsguNtQnHw==',
+        { type: 'group', openConversationId: 'cidLY0TRpE+Ka//RsguNtQnHw==' },
+        'group:cidLY0TRpE+Ka//RsguNtQnHw==',
+      ],
     ] as const;
 
     for (const [target, expectedTarget, expectedReturn] of cases) {
@@ -379,7 +394,14 @@ describe('Card Gateway Methods - 参数验证', () => {
       );
     }
 
-    for (const target of ['plain_user', 'ding:user:user_123', '<script>alert(1)</script>', `user:${'a'.repeat(257)}`]) {
+    for (const target of [
+      'plain_user',
+      'ding:user:user_123',
+      '<script>alert(1)</script>',
+      'group:cid<script>alert(1)</script>',
+      'user:user"123',
+      `user:${'a'.repeat(257)}`,
+    ]) {
       const { ok, result } = await mockApi.callMethod('dingtalk-connector.card.create', {
         target,
       });
@@ -387,6 +409,27 @@ describe('Card Gateway Methods - 参数验证', () => {
       expect(ok).toBe(false);
       expect(result?.error).toContain('target');
     }
+  });
+
+  it('card.create 应原样返回公开错误并过滤内部错误', async () => {
+    mockCreateAICardForTarget.mockResolvedValueOnce(null);
+    const publicFailure = await mockApi.callMethod('dingtalk-connector.card.create', {
+      target: 'user:user_123',
+    });
+
+    expect(publicFailure.ok).toBe(false);
+    expect(publicFailure.result?.error).toBe('Failed to create DingTalk AI Card');
+
+    mockCreateAICardForTarget.mockRejectedValueOnce(new Error('token=secret internal create failure'));
+    const internalFailure = await mockApi.callMethod('dingtalk-connector.card.create', {
+      target: 'user:user_123',
+    });
+
+    expect(internalFailure.ok).toBe(false);
+    expect(internalFailure.result?.error).toBe('card.create failed');
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining('token=secret internal create failure'),
+    );
   });
 
   it('card.create -> card.update(running) -> card.update(completed) 应完成完整生命周期', async () => {

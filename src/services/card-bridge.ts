@@ -16,14 +16,7 @@ const CARD_RECORD_MAX_SIZE = 10_000;
 const CARD_RECORD_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const DEFAULT_FAILED_CARD_MARKDOWN = "Task failed";
 const TARGET_ID_MAX_LENGTH = 256;
-const TARGET_ID_PATTERN = /^[A-Za-z0-9_:\-$]+$/;
-const PUBLIC_ERROR_PREFIXES = [
-  "target is required",
-  "cardInstanceId is required",
-  "Unknown cardInstanceId",
-  "DingTalk not configured",
-  "Failed to create DingTalk AI Card",
-];
+const TARGET_ID_DANGEROUS_CHARS_PATTERN = /[<>"\x00-\x1f\x7f]/;
 
 type LoggerLike = {
   debug?: (message: string) => void;
@@ -69,6 +62,9 @@ export type DingtalkCardBridge = {
 };
 
 const cards = new Map<string, CardRecord>();
+let cleanupTimerInstalled = false;
+
+class PublicError extends Error {}
 
 function nowMs(): number {
   return Date.now();
@@ -89,17 +85,14 @@ function errorMessage(err: unknown): string {
 }
 
 function publicErrorMessage(err: unknown, fallback: string): string {
-  const message = errorMessage(err);
-  return PUBLIC_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix))
-    ? message
-    : fallback;
+  return err instanceof PublicError ? err.message : fallback;
 }
 
 function isValidTargetId(value: string): boolean {
   return (
     value.length > 0 &&
     value.length <= TARGET_ID_MAX_LENGTH &&
-    TARGET_ID_PATTERN.test(value)
+    !TARGET_ID_DANGEROUS_CHARS_PATTERN.test(value)
   );
 }
 
@@ -146,30 +139,28 @@ function cleanupExpiredCards(log?: LoggerLike, timestamp = nowMs()): number {
 }
 
 function evictOverflowCards(log?: LoggerLike): number {
-  let removed = 0;
-  while (cards.size > CARD_RECORD_MAX_SIZE) {
-    let oldestId: string | undefined;
-    let oldestLastUsedAt = Infinity;
-    for (const [cardInstanceId, record] of cards) {
-      if (record.lastUsedAt < oldestLastUsedAt) {
-        oldestId = cardInstanceId;
-        oldestLastUsedAt = record.lastUsedAt;
-      }
-    }
-    if (!oldestId) break;
-    cards.delete(oldestId);
-    removed += 1;
+  const overflow = cards.size - CARD_RECORD_MAX_SIZE;
+  if (overflow <= 0) return 0;
+
+  const oldest = [...cards.entries()]
+    .sort(([, a], [, b]) => a.lastUsedAt - b.lastUsedAt)
+    .slice(0, overflow);
+
+  for (const [cardInstanceId] of oldest) {
+    cards.delete(cardInstanceId);
   }
-  if (removed > 0) {
-    log?.warn?.(`[DingTalk][CardBridge] evicted old cards count=${removed}`);
-  }
-  return removed;
+  log?.warn?.(`[DingTalk][CardBridge] evicted old cards count=${oldest.length}`);
+  return oldest.length;
 }
 
-const cleanupTimer = setInterval(() => {
-  cleanupExpiredCards();
-}, CARD_RECORD_CLEANUP_INTERVAL_MS);
-cleanupTimer.unref?.();
+function ensureCleanupTimerInstalled(): void {
+  if (cleanupTimerInstalled) return;
+  const cleanupTimer = setInterval(() => {
+    cleanupExpiredCards();
+  }, CARD_RECORD_CLEANUP_INTERVAL_MS);
+  cleanupTimer.unref?.();
+  cleanupTimerInstalled = true;
+}
 
 function rememberCard(card: AICardInstance, config: DingtalkConfig, log?: LoggerLike): CardRecord {
   cleanupExpiredCards(log);
@@ -198,7 +189,7 @@ async function loadRuntimeConfig(
 
 function getCardRecord(cardInstanceId: string): CardRecord {
   const record = cards.get(cardInstanceId);
-  if (!record) throw new Error(`Unknown cardInstanceId: ${cardInstanceId}`);
+  if (!record) throw new PublicError(`Unknown cardInstanceId: ${cardInstanceId}`);
   record.lastUsedAt = nowMs();
   return record;
 }
@@ -214,7 +205,7 @@ function resolveAccountConfig(
     accountId: typeof accountId === "string" ? accountId : undefined,
   });
   if (!account.enabled || !account.configured) {
-    throw new Error("DingTalk not configured");
+    throw new PublicError("DingTalk not configured");
   }
   log?.debug?.(`[DingTalk][CardBridge][${method}] using accountId=${account.accountId}`);
   return account;
@@ -229,7 +220,7 @@ async function createCard(params: {
 }) {
   const account = resolveAccountConfig(params.cfg, params.accountId, params.log, "card.create");
   const card = await createAICardForTarget(account.config, params.target, params.log);
-  if (!card) throw new Error("Failed to create DingTalk AI Card");
+  if (!card) throw new PublicError("Failed to create DingTalk AI Card");
   rememberCard(card, account.config, params.log);
   try {
     if (params.markdown) {
@@ -275,7 +266,7 @@ async function updateCardRecord(
   log?: LoggerLike,
 ) {
   if (cards.get(cardInstanceId) !== record) {
-    throw new Error(`Unknown cardInstanceId: ${cardInstanceId}`);
+    throw new PublicError(`Unknown cardInstanceId: ${cardInstanceId}`);
   }
   record.lastUsedAt = nowMs();
   log?.info?.(`[DingTalk][CardBridge][card.update] cardInstanceId=${cardInstanceId} status=${status}`);
@@ -313,12 +304,13 @@ export function getDingtalkCardBridge(): DingtalkCardBridge | undefined {
 }
 
 export function installDingtalkCardBridge(api: OpenClawPluginApi): void {
+  ensureCleanupTimerInstalled();
   const g = globalThis as any;
   g[DINGTALK_CARD_BRIDGE_SYMBOL] = {
     async create(params: CardCreateParams) {
       const cfg = await loadRuntimeConfig(api, params?.cfg);
       const target = parseCardTarget(params?.target);
-      if (!target) throw new Error("target is required (user:<userId>, group:<openConversationId>, or cid...)");
+      if (!target) throw new PublicError("target is required (user:<userId>, group:<openConversationId>, or cid...)");
       return createCard({
         cfg,
         accountId: params?.accountId,
@@ -328,7 +320,7 @@ export function installDingtalkCardBridge(api: OpenClawPluginApi): void {
       });
     },
     async update(params: CardUpdateParams) {
-      if (!params?.cardInstanceId) throw new Error("cardInstanceId is required");
+      if (!params?.cardInstanceId) throw new PublicError("cardInstanceId is required");
       return updateCard({
         cardInstanceId: String(params.cardInstanceId),
         markdown: String(params?.markdown ?? ""),
