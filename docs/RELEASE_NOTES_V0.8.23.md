@@ -1,7 +1,7 @@
-# Release Notes - v0.8.22
+# Release Notes - v0.8.23 / v0.8.22
 
-> **GA 正式版** — 晋升自 `0.8.22-beta.0`，经 ~3 天社区验证（无回归反馈）后正式发布。
-> **General Availability** — Promoted from `0.8.22-beta.0` after ~3 days of community validation with no regression.
+> **v0.8.23 为 v0.8.22 的重新发布包**（[#609](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/609)），功能与 `0.8.22` 完全一致，推荐直接安装 `0.8.23`。
+> **v0.8.23 is a republish of v0.8.22** ([#609](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/609)), functionally identical to `0.8.22`; please install `0.8.23`.
 
 ## 🎉 本次重点 / Highlights
 
@@ -72,7 +72,7 @@ This release focuses on UX copy + dws onboarding experience. Functionally identi
 ## 📥 安装升级 / Installation & Upgrade
 
 ```bash
-openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.22
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.23
 openclaw gateway restart
 ```
 
@@ -86,10 +86,11 @@ npm install @dingtalk-real-ai/dingtalk-connector@latest
 
 - [完整变更日志 / Full Changelog](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/CHANGELOG.md)
 - [Beta release notes (`v0.8.22-beta.0`)](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/docs/RELEASE_NOTES_V0.8.22-beta.0.md)
-- 关联 PRs / issues：[#599](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/599) / [#601](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/601) / [#565](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/565) / [#598](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/598) / [dws #327](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/issues/327)
+- 关联 PRs / issues：[#599](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/599) / [#601](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/601) / [#565](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/565) / [#598](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/598) / [#609](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/609) / [dws #327](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/issues/327)
 
 ---
 
-**发布日期 / Release Date**：2026-05-24
-**版本号 / Version**：v0.8.22
+**v0.8.23 发布日期 / Release Date**：2026-05-26
+**v0.8.22 发布日期 / Release Date**：2026-05-24
+**当前推荐版本 / Recommended Version**：v0.8.23
 **兼容性 / Compatibility**：OpenClaw Gateway 2026.5.7+

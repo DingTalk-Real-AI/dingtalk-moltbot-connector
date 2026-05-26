@@ -7,15 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.8.22] - 2026-05-24
+## [0.8.23] - 2026-05-26 / [0.8.22] - 2026-05-24
 
-晋升自 `0.8.22-beta.0` 的 GA 版本，与 beta.0 内容完全一致，经过 ~3 天社区验证（无回归反馈）后正式发布。
-GA promotion of `0.8.22-beta.0` after ~3 days of community validation with no regression; functionally identical to the beta.
+> `0.8.23` 为 `0.8.22` 的重发版本，内容沿用自 `0.8.22` / `0.8.22-beta.0`，建议直接安装 `0.8.23`（[#609](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/609)）。
+> `0.8.23` is a republish of `0.8.22` with identical functionality; please install `0.8.23` ([#609](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/609)).
 
 ### 升级 / Upgrade
 
 ```bash
-openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.22
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.23
 openclaw gateway restart
 ```
 
