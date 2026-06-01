@@ -112,7 +112,7 @@ const sessionGenerations = new Map<string, number>();
 function isStopCommand(text: string): boolean {
   if (!text) return false;
   const normalized = text.trim().toLowerCase().replace(/\s+/g, " ");
-  return normalized === "/stop" || normalized === "stop";
+  return normalized === "/stop" || normalized === "stop" || normalized === "停止";
 }
 
 function cleanupExpiredSessionQueues(): void {
