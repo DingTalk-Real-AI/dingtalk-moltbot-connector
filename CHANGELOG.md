@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.24] - 2026-06-18
+
+### Fixed
+
+- **onboarding**: fix `ReferenceError: promptSingleChannelSecretInput is not defined` on the existing-config manual-input path. The static import was removed in #527 but one call site (the "update existing account" secret prompt) was missed; it now uses the same dynamic `import("openclaw/plugin-sdk/setup")` as the other call site.
+- **accounts**: replace `Array.prototype.toSorted` with `sort()` on a spread copy in `listDingtalkAccountIds`. `toSorted` is ES2023 / Node 20+ and threw on older runtimes hosting the plugin.
+
+### Changed
+
+- **connection**: expose a structured `DingtalkWsClient` type for the `DWClient` instance instead of a bare `as any`, documenting the private `socket` member the custom heartbeat / reconnect logic relies on.
+
 ## [0.8.23] - 2026-05-26 / [0.8.22] - 2026-05-24
 
 > `0.8.23` 为 `0.8.22` 的重发版本，内容沿用自 `0.8.22` / `0.8.22-beta.0`，建议直接安装 `0.8.23`（[#609](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/609)）。

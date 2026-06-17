@@ -29,6 +29,21 @@ export type DingtalkReactionCreatedEvent = {
   emoji: string;
 };
 
+/**
+ * Structured view of DWClient: exposes the members this connection layer uses.
+ * The SDK declares the underlying WebSocket (socket) as private, but the custom
+ * heartbeat / reconnect logic needs to operate on it directly, so socket and the
+ * public methods used here are listed explicitly.
+ */
+type DingtalkWsClient = {
+  socket?: any;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  on(event: string, listener: (...args: any[]) => void): void;
+  registerCallbackListener(topic: string, listener: (...args: any[]) => void): void;
+  socketCallBackResponse(messageId: string, data: any): void;
+};
+
 // 消息处理器函数类型
 export type MessageHandler = (params: {
   accountId: string;
@@ -187,6 +202,8 @@ export async function monitorSingleAccount(
   }
 
   // 配置 DWClient：禁用 SDK 内置的 keepAlive 和 autoReconnect，使用自定义实现
+  // 注：DWClient.socket 为私有成员，但本连接层需直接访问底层 WebSocket 以实现
+  //     自定义心跳与重连，故用结构化类型暴露本层用到的成员（含 socket）。
   const client = new DWClient({
     clientId: account.clientId,
     clientSecret: account.clientSecret,
@@ -195,7 +212,7 @@ export async function monitorSingleAccount(
     endpoint: account.config.endpoint || "https://api.dingtalk.com",
     autoReconnect: false, // ❌ 禁用 SDK 自动重连
     keepAlive: false, // ❌ 禁用 SDK 心跳检测
-  } as any);
+  } as any) as unknown as DingtalkWsClient;
 
   // ============ 连接状态管理 ============
 
