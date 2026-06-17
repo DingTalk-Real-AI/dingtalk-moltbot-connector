@@ -28,7 +28,9 @@ export function listDingtalkAccountIds(cfg: ClawdbotConfig): string[] {
     // Backward compatibility: no accounts configured, use default
     return [DEFAULT_ACCOUNT_ID];
   }
-  return [...ids].toSorted((a, b) => a.localeCompare(b));
+  // Use sort() on a spread copy instead of toSorted() — toSorted is ES2023 / Node 20+,
+  // and this plugin may run on older runtimes where it would throw at runtime.
+  return [...ids].sort((a, b) => a.localeCompare(b));
 }
 
 /**

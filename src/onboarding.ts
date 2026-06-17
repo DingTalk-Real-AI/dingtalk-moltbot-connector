@@ -406,7 +406,8 @@ export const dingtalkOnboardingAdapter: ChannelSetupWizardAdapter = {
                 normalizeString(dingtalkCfg?.clientId) ?? normalizeString(_env.DINGTALK_CLIENT_ID),
             });
 
-            const clientSecretResult = await promptSingleChannelSecretInput({
+            const { promptSingleChannelSecretInput: promptSecret } = await import("openclaw/plugin-sdk/setup");
+            const clientSecretResult = await promptSecret({
               cfg: next,
               prompter,
               providerHint: "dingtalk",
