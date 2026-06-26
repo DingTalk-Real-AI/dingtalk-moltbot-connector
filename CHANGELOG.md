@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.24-beta.0] - 2026-06-26
+
+> **社区验证版本** — 计划 ~1 周观察期后晋升为 `v0.8.24`。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.24-beta.0.md)。
+> Community validation release — planned to promote to `v0.8.24` after ~1 week observation window.
+
+### 新增 / Features
+
+- ✨ **AI Card Gateway Methods ([#603](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/603))** — 新增 `dingtalk-connector.card.create` / `dingtalk-connector.card.update` 两个 gateway method，外部 OpenClaw tool/plugin 可直接创建和更新钉钉 AI Card（含初始化、流式更新、完成态和失败态）。同时新增同进程 card bridge，同一运行时内的 plugin 可直接调用，无需走 gateway RPC。感谢 @hugtale 贡献。
+  **AI Card Gateway Methods ([#603](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/603))** — Two new gateway methods `dingtalk-connector.card.create` / `dingtalk-connector.card.update` let external OpenClaw tools create and update DingTalk AI Cards (init, stream, complete, fail). Also adds an in-process card bridge for same-runtime plugins. Credit: @hugtale.
+
+### 优化 / Improvements
+
+- 🔧 **Card bridge follow-up 优化 ([#611](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/611) / [#612](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/612))** — cleanup timer 延迟初始化、overflow eviction 改批量删除、裸 cid target 收紧为显式正则、错误判定改 `PublicError` class、补充错误处理测试。感谢 @hugtale 贡献。
+  **Card bridge follow-up optimizations ([#611](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/611) / [#612](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/612))** — Lazy cleanup timer init, batch overflow eviction, strict cid target regex, `PublicError` class for error discrimination, error handling tests. Credit: @hugtale.
+
 ## [0.8.23] - 2026-05-26 / [0.8.22] - 2026-05-24
 
 > `0.8.23` 为 `0.8.22` 的重发版本，内容沿用自 `0.8.22` / `0.8.22-beta.0`，建议直接安装 `0.8.23`（[#609](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/609)）。
