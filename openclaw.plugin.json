@@ -1,14 +1,16 @@
 {
   "id": "dingtalk-connector",
   "name": "DingTalk Channel",
-  "version": "0.8.23",
+  "version": "0.8.24",
   "description": "Official OpenClaw DingTalk channel plugin | 钉钉官方 OpenClaw 插件",
   "author": "DingTalk Real Team",
   "main": "index.ts",
   "channels": [
     "dingtalk-connector"
   ],
-  "skills": ["./skills"],
+  "skills": [
+    "./skills"
+  ],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
