@@ -221,8 +221,71 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   const streamingEnabled = !isTextMode && (account.config as any)?.streaming !== false;
   // 用 Promise 保存 AI Card 的创建过程，避免 final 消息到达时轮询等待
   let cardCreationPromise: Promise<void> | null = null;
+  // 回合 settle（onIdle）后置 true。openclaw 2026.5.x+ 存在 settle 之后仍会送达的
+  // 迟到回调（typing keepalive 触发的 onReplyStart、steer/followup 认领回合经旧
+  // dispatcher 投递的 block 等，见 openclaw typing.ts 的 sealed 机制注释）。
+  // 密封后不再创建新卡片——settle 后创建的卡片没有任何收口方，必然孤儿转圈。
+  let streamingSealed = false;
+
+  // ===== 卡片守护超时（watchdog）=====
+  // settle 可能永远不来：上游 run 挂死、openclaw dispatch 不返回、或收口链中
+  // 无超时的调用挂住——此时 onIdle 收口路径整体失效，卡片将永久转圈。
+  // watchdog 是最后防线：卡片创建后计时，流式更新/命令输出会刷新计时；
+  // 到期仍未收口则强制 finishAICard 并密封本轮，之后迟到的 final/block
+  // 走密封降级路径以普通消息发出，内容不丢失。
+  const CARD_WATCHDOG_TIMEOUT_MS = 10 * 60 * 1000;
+  let cardWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+  let watchdogCard: AICardInstance | null = null;
+
+  const clearCardWatchdog = () => {
+    if (cardWatchdogTimer) {
+      clearTimeout(cardWatchdogTimer);
+      cardWatchdogTimer = null;
+    }
+    watchdogCard = null;
+  };
+
+  const forceFinishStaleCard = async () => {
+    const staleCard = watchdogCard;
+    cardWatchdogTimer = null;
+    watchdogCard = null;
+    if (!staleCard) return;
+    // 本轮已不可信：密封防止迟到回调再建卡；清空引用防止收口路径二次 finish
+    streamingSealed = true;
+    if (currentCardTarget === (staleCard as any)) {
+      currentCardTarget = null;
+    }
+    const timeoutText = accumulatedText.trim() || pickEmptyReplyFallbackText(!isDirect);
+    log.warn(
+      `[DingTalk][cardWatchdog] 卡片超过 ${CARD_WATCHDOG_TIMEOUT_MS / 60000} 分钟未收口（settle 未到达），强制结束以避免永久转圈`,
+    );
+    try {
+      await finishAICard(staleCard, timeoutText, account.config as DingtalkConfig, log);
+      outboundUserVisibleThisTurn = true;
+      log.info(`[DingTalk][cardWatchdog] ✅ 强制收口成功`);
+    } catch (err: any) {
+      log.error(`[DingTalk][cardWatchdog] ❌ 强制收口失败：${err?.message || String(err)}`);
+    } finally {
+      accumulatedText = "";
+    }
+  };
+
+  const armCardWatchdog = () => {
+    if (cardWatchdogTimer) {
+      clearTimeout(cardWatchdogTimer);
+    }
+    cardWatchdogTimer = setTimeout(() => {
+      void forceFinishStaleCard();
+    }, CARD_WATCHDOG_TIMEOUT_MS);
+    (cardWatchdogTimer as any).unref?.();
+  };
 
   const startStreaming = (): Promise<void> => {
+    // 回合已 settle：迟到回调不得再创建 AI Card
+    if (streamingSealed) {
+      log.debug(`[DingTalk][startStreaming] 回合已 settle（sealed），跳过 AI Card 创建`);
+      return Promise.resolve();
+    }
     // 如果已经有创建中的 Promise，直接复用，避免并发创建
     if (cardCreationPromise) {
       return cardCreationPromise;
@@ -250,6 +313,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         currentCardTarget = preCreatedCard as any;
         accumulatedText = "";
         outboundUserVisibleThisTurn = true;
+        watchdogCard = preCreatedCard;
+        armCardWatchdog();
         return;
       }
 
@@ -271,6 +336,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         accumulatedText = "";
 
         if (card) {
+          watchdogCard = card;
+          armCardWatchdog();
           log.info(`[DingTalk][startStreaming] ✅ AI Card 创建成功`);
         } else {
           log.warn(`[DingTalk][startStreaming] AI Card 创建返回 null，静默降级到普通消息模式`);
@@ -288,6 +355,18 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   };
 
   const closeStreaming: () => Promise<void> = async () => {
+    // ✅ 先等待仍在途的卡片创建完成再快照。final 被上游抑制的回合
+    // （openclaw 2026.5.x+ 的 message_tool_only / steer 认领，final 永远不会
+    // 经 deliver 到达）里 onIdle → closeStreaming 是唯一收口；若此刻创建
+    // HTTP 尚未返回，直接快照会拿到 null 而跳过关闭，卡片随后创建成功后
+    // 将永远停留在 INPUTING（转圈）状态。
+    if (cardCreationPromise) {
+      try {
+        await cardCreationPromise;
+      } catch {
+        // 创建失败已在 startStreaming 内部降级处理，此处继续走快照逻辑即可
+      }
+    }
     // 立即捕获并清空，防止并发调用重复执行（竞争条件保护）
     // closeStreaming 可能被 onIdle 和 onError 同时触发，若不在此处清空，
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
@@ -450,7 +529,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       }
     } finally {
-      // currentCardTarget 已在函数开头清空，此处只需重置累积文本
+      // currentCardTarget 已在函数开头清空，此处只需重置累积文本；
+      // 正常收口完成，解除守护计时（若 watchdog 已先行触发则此处为幂等清理）
+      clearCardWatchdog();
       accumulatedText = "";
     }
   };
@@ -516,7 +597,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     }
   };
 
-  const { dispatcher, replyOptions, markDispatchIdle } =
+  const { dispatcher, replyOptions, markDispatchIdle, markRunComplete } =
     core.channel.reply.createReplyDispatcherWithTyping({
       ...prefixOptions,
       humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, agentId),
@@ -601,6 +682,37 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             log.info(`[DingTalk][deliver] block 消息，流式未启用，丢弃`);
             return;
           }
+          // 回合已 settle：这可能是 steer/followup 认领回合经本 dispatcher 送达的
+          // 实际回复（openclaw 2026.5.x+ 对认领回合从不投递 final，只以 block 形式
+          // 经原回合 dispatcher 送达）。降级为普通消息发出——既保住回复内容，
+          // 也不会创建一张无人收口的孤儿卡片。
+          if (streamingSealed) {
+            log.info(`[DingTalk][deliver] block 晚于 settle 到达，降级为普通消息发送，文本长度=${text.length}`);
+            try {
+              for (const chunk of core.channel.text.chunkTextWithMode(
+                text,
+                textChunkLimit,
+                chunkMode
+              )) {
+                await sendMessage(
+                  account.config as DingtalkConfig,
+                  sessionWebhook,
+                  chunk,
+                  {
+                    useMarkdown: true,
+                    log: params.runtime.log,
+                    cfg,
+                    detectBareAliases: true,
+                  }
+                );
+              }
+              outboundUserVisibleThisTurn = true;
+              log.info(`[DingTalk][deliver] ✅ 迟到 block 降级发送成功`);
+            } catch (lateErr: any) {
+              log.error(`[DingTalk][deliver] ❌ 迟到 block 降级发送失败：${lateErr.message}`);
+            }
+            return;
+          }
           log.info(`[DingTalk][deliver] block 消息，追加到流式 AI Card，文本长度=${text.length}`);
           // 确保 AI Card 已创建（startStreaming 内部会复用已有的 cardCreationPromise）
           await startStreaming();
@@ -620,6 +732,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                   log
                 );
                 outboundUserVisibleThisTurn = true;
+                if (watchdogCard) armCardWatchdog();
                 log.info(`[DingTalk][deliver] ✅ block 更新到 AI Card 成功`);
               } catch (streamErr: any) {
                 log.error(`[DingTalk][deliver] ❌ block 更新 AI Card 失败：${streamErr.message}`);
@@ -717,6 +830,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       onIdle: async () => {
         log.info(`[DingTalk][onIdle] 回复空闲，关闭 AI Card`);
         typingCallbacks.onIdle?.();
+        // 先密封再收口：onIdle 意味着本轮 dispatcher 已 settle
+        //（reservation 语义保证 onIdle 只在 markComplete 之后触发），
+        // 此后任何迟到回调都不允许再创建新卡片。
+        streamingSealed = true;
         await closeStreaming();
         await maybeSendGroupVisibleRepliesIdleNudge();
       },
@@ -782,6 +899,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 log
               );
               outboundUserVisibleThisTurn = true;
+              if (watchdogCard) armCardWatchdog();
               log.debug(`[DingTalk][onPartialReply] ✅ AI Card 更新成功`);
             } catch (err: any) {
               // QPS 限流是瞬时错误：streamAICard 内部已自动退避+重试，
@@ -820,6 +938,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         durationMs?: number;
         cwd?: string;
       }) => {
+        // 命令仍在执行说明本轮存活：刷新卡片守护计时，避免长任务被误判为挂死
+        if (watchdogCard) armCardWatchdog();
         const commandText = payload.title || payload.name || '';
         const dwsMatch = commandText.match(DWS_PRODUCT_PATTERN) || payload.output?.match(DWS_PRODUCT_PATTERN);
         if (dwsMatch) {
@@ -836,6 +956,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       },
     },
     markDispatchIdle,
+    // 2026.7.x 通道契约要求 settle 时成对调用 markRunComplete + markDispatchIdle
+    //（参照 openclaw core dispatch.ts 与 Feishu 插件 comment-handler）；
+    // 旧版 SDK（2026.4.9）同样返回该方法，可选调用保证向后兼容。
+    markRunComplete: () => markRunComplete?.(),
     getAsyncModeResponse: () => asyncModeFullResponse,
   };
 }

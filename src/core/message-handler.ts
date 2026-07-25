@@ -1465,7 +1465,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     } as any);
 
     // 创建 reply dispatcher，使用解析后的 agentId
-    const { dispatcher, replyOptions, markDispatchIdle, getAsyncModeResponse } = createDingtalkReplyDispatcher({
+    const { dispatcher, replyOptions, markDispatchIdle, markRunComplete, getAsyncModeResponse } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
       runtime: runtime as RuntimeEnv,
@@ -1506,6 +1506,10 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     const dispatchResult = await core.channel.reply.withReplyDispatcher({
       dispatcher,
       onSettled: () => {
+        // 2026.7.x 通道契约：settle 时成对调用 markRunComplete + markDispatchIdle
+        //（typing 控制器需要两个信号齐全才会 cleanup/seal，缺 markRunComplete
+        // 会导致 typing keepalive 无法收口，见 openclaw typing.ts:189-197）。
+        markRunComplete?.();
         markDispatchIdle();
       },
       run: async () => {
