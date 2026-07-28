@@ -80,6 +80,11 @@ const DingtalkSharedConfigShape = {
   groupSessionScope: GroupSessionScopeSchema,
   asyncMode: z.boolean().optional(),
   ackText: z.string().optional(),
+  cardTemplateId: z.string().optional(), // Custom AI Card template ID (default: built-in template)
+  cardTemplateKey: z.string().optional(), // Content variable name in the card template (default: "msgContent")
+  cardLikeActionId: z.string().optional(), // Like button callback action ID (default: "ai_res_like")
+  cardDislikeActionId: z.string().optional(), // Dislike button callback action ID (default: "ai_res_dislike")
+  cardFeedbackStatusKey: z.string().optional(), // Card variable name to set on like/dislike (default: "like")
   endpoint: z.string().optional(), // DWClient gateway endpoint
   debug: z.boolean().optional(), // DWClient debug mode
   enableMediaUpload: z.boolean().optional(),

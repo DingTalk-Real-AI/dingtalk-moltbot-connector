@@ -1066,6 +1066,7 @@ async function sendProactiveInternal(
     try {
       const card = await createAICardForTarget(config, target, externalLog);
       if (card) {
+        console.warn(`[DingTalk][sendProactiveInternal] AI Card 已创建: cardInstanceId=${card.cardInstanceId}, target=${JSON.stringify(target)}`);
         await finishAICard(card, content, config, externalLog);
         return {
           ok: true,

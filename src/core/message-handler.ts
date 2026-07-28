@@ -67,18 +67,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-// ============ 常量 ============
-
-const AI_CARD_TEMPLATE_ID = '02fcf2f4-5e02-4a85-b672-46d1f715543e.schema';
-
-const AICardStatus = {
-  PROCESSING: '1',
-  INPUTING: '2',
-  FINISHED: '3',
-  EXECUTING: '4',
-  FAILED: '5',
-} as const;
-
 // ============ 会话级别消息队列 ============
 
 /**
@@ -1477,6 +1465,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       sessionWebhook: data.sessionWebhook,
       asyncMode,
       preCreatedCard: params.preCreatedCard,
+      sessionKey,
     });
 
     // ===== 注入当前 bot 的 clientId（用于 dws CLI --client-id 参数） =====

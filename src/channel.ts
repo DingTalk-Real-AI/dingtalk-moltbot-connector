@@ -29,6 +29,7 @@ import { normalizeDingtalkTarget, looksLikeDingtalkId } from "./targets.ts";
 import { dingtalkOnboardingAdapter } from "./onboarding.ts";
 import { monitorDingtalkProvider } from "./core/provider.ts";
 import { sendTextToDingTalk, sendMediaToDingTalk } from "./services/messaging/index.ts";
+import { registerCardSession, guessSessionKeyByTarget } from "./services/card-session-registry.ts";
 import type { ResolvedDingtalkAccount, DingtalkConfig } from "./types/index.ts";
 
 /** Channel identifier used across the plugin. Single source of truth. */
@@ -341,6 +342,28 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         text,
         replyToId,
       });
+
+      // --- 注册 outbound 创建的 AI Card 到 session 映射 ---
+      // outbound.sendText 路径无法获得 sessionKey（SDK 接口不传递），
+      // 通过已注册条目的 target 模式匹配来推断正确的 sessionKey。
+      if (result.cardInstanceId) {
+        try {
+          const match = await guessSessionKeyByTarget(to);
+          if (match) {
+            registerCardSession(result.cardInstanceId, {
+              sessionKey: match.sessionKey,
+              agentId: match.agentId,
+              createdAt: Date.now(),
+            });
+            console.warn(`[DingTalk][outbound.sendText] 已注册 outbound 卡片: cardInstanceId=${result.cardInstanceId}, sessionKey=${match.sessionKey}`);
+          } else {
+            console.warn(`[DingTalk][outbound.sendText] 无法推断 sessionKey，outbound 卡片未注册: cardInstanceId=${result.cardInstanceId}, target=${to}`);
+          }
+        } catch (regErr: any) {
+          console.warn(`[DingTalk][outbound.sendText] 注册卡片异常（不影响发送）: ${regErr?.message || regErr}`);
+        }
+      }
+
       return {
         channel: CHANNEL_ID,
         messageId: result.processQueryKey ?? result.cardInstanceId ?? "unknown",
