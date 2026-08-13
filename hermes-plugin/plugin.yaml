@@ -1,0 +1,72 @@
+name: dingtalk-official
+label: DingTalk Official
+kind: platform
+version: 0.1.0
+description: >
+  Hermes Agent platform plugin entrypoint for the DingTalk official connector.
+  It registers Hermes' DingTalk Stream adapter with the official AI Card
+  template enabled by default, proactive robot sends, local media upload, and
+  a DingTalk dws skill.
+author: DingTalk Real AI / Hermes conversion
+requires_env:
+  - name: DINGTALK_CLIENT_ID
+    description: "DingTalk AppKey / Client ID for the robot application"
+    prompt: "DingTalk client ID"
+    password: false
+  - name: DINGTALK_CLIENT_SECRET
+    description: "DingTalk AppSecret / Client Secret for the robot application"
+    prompt: "DingTalk client secret"
+    password: true
+optional_env:
+  - name: DINGTALK_CARD_TEMPLATE_ID
+    description: "AI Card template ID; defaults to the official connector template"
+    prompt: "DingTalk AI Card template ID"
+    password: false
+  - name: DINGTALK_ROBOT_CODE
+    description: "Robot code for AI Card delivery; defaults to the client ID"
+    prompt: "DingTalk robot code"
+    password: false
+  - name: DINGTALK_ACCOUNT_ID
+    description: "Friendly local bot/account ID used in BotIdentity logs"
+    prompt: "DingTalk account ID"
+    password: false
+  - name: DINGTALK_BOT_MENTIONS
+    description: "JSON bot mention map/list used to resolve @agent aliases to chatbotUserId"
+    prompt: "DingTalk bot mention aliases"
+    password: false
+  - name: DINGTALK_SUPPRESS_INTERMEDIATE
+    description: "Suppress tool progress, terminal activity, and interim assistant messages (default true)"
+    prompt: "Suppress DingTalk intermediate activity"
+    password: false
+  - name: DINGTALK_SHOW_ACTIVITY
+    description: "Set true to show debug/tool-progress activity messages in DingTalk"
+    prompt: "Show DingTalk activity messages"
+    password: false
+  - name: DINGTALK_REQUIRE_MENTION
+    description: "Require a bot mention in group chats (true/false)"
+    prompt: "Require group mention"
+    password: false
+  - name: DINGTALK_ALLOWED_USERS
+    description: "Comma-separated DingTalk sender/staff IDs allowed to use the bot"
+    prompt: "Allowed DingTalk users"
+    password: false
+  - name: DINGTALK_ALLOW_ALL_USERS
+    description: "Allow all DingTalk users through Hermes gateway authorization"
+    prompt: "Allow all DingTalk users"
+    password: false
+  - name: DINGTALK_ALLOWED_CHATS
+    description: "Comma-separated group conversation IDs allowed to trigger the bot"
+    prompt: "Allowed DingTalk chats"
+    password: false
+  - name: DINGTALK_FREE_RESPONSE_CHATS
+    description: "Comma-separated group conversation IDs that do not require a mention"
+    prompt: "Free-response DingTalk chats"
+    password: false
+  - name: DINGTALK_MENTION_PATTERNS
+    description: "JSON list, newline list, or comma list of group wake-word regexes"
+    prompt: "DingTalk mention patterns"
+    password: false
+  - name: DINGTALK_HOME_CHANNEL
+    description: "Default conversation ID for Hermes cron delivery"
+    prompt: "DingTalk home channel"
+    password: false

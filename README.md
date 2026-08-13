@@ -89,6 +89,21 @@ openclaw gateway restart
 
 ---
 
+## Hermes 版本
+
+`hermes-plugin/` 提供 Hermes Agent 的平台插件入口。Hermes 当前已经内建 DingTalk Stream 通道、扫码注册、媒体接收和 AI Card 支持；这个插件复用 Hermes 的 DingTalk 适配器，并补上本 connector 使用的官方 AI Card 默认模板、主动发用户/群消息、本地图片/文件上传，以及 DingTalk `dws` skill。
+
+```bash
+cp -R hermes-plugin ~/.hermes/plugins/dingtalk-official
+hermes plugins enable dingtalk-official
+```
+
+配置 `DINGTALK_CLIENT_ID` 与 `DINGTALK_CLIENT_SECRET` 后启动 Hermes gateway。若需关闭默认 AI Card 模板，可在 Hermes 配置中显式覆盖 `platforms.dingtalk.extra.card_template_id`。
+
+详细说明见 [Hermes 插件 README](hermes-plugin/README.md)。
+
+---
+
 ## 使用指南
 
 [OpenClaw 钉钉官方插件使用指南](https://alidocs.dingtalk.com/i/nodes/2Amq4vjg89GEno0zfPqoPGqdV3kdP0wQ?utm_scene=team_space)
