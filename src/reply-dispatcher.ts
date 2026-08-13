@@ -295,7 +295,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       return Promise.resolve();
     }
 
-    cardCreationPromise = (async () => {
+    const creation = (async () => {
       // 异步模式下禁用流式 AI Card
       if (asyncMode) {
         log.info(`[DingTalk][startStreaming] 异步模式，跳过 AI Card 创建`);
@@ -345,13 +345,20 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       } catch (error: any) {
         log.error(`[DingTalk][startStreaming] ❌ AI Card 创建失败：${error?.message || String(error)}，静默降级到普通消息模式`);
         currentCardTarget = null;
-      } finally {
-        // 创建完成后清空 Promise，允许下次重新创建
-        cardCreationPromise = null;
       }
     })();
 
-    return cardCreationPromise;
+    cardCreationPromise = creation;
+    // 在 Promise settle 后清空 gate，覆盖所有路径（含 asyncMode /
+    // !streamingEnabled / preCreatedCard 的 early return——它们不进入
+    // 内部 try/finally，旧实现只在内部 finally 清空，导致这三条路径
+    // 的 cardCreationPromise 永远指向已 settle 的 stale Promise，后续
+    // startStreaming 调用会复用 stale Promise 而非走 currentCardTarget
+    // 快捷路径或重新创建）。
+    creation.finally(() => {
+      if (cardCreationPromise === creation) cardCreationPromise = null;
+    });
+    return creation;
   };
 
   const closeStreaming: () => Promise<void> = async () => {
@@ -616,8 +623,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         outboundUserVisibleThisTurn = false;
         idleConfigNudgeSent = false;
         if (streamingEnabled) {
-          // fire-and-forget：提前创建 AI Card，onPartialReply 会等待创建完成
-          void startStreaming();
+          // fire-and-forget：提前创建 AI Card，onPartialReply 会等待创建完成。
+          // 加 .catch() 防止 IIFE early-return 路径（preCreatedCard 里
+          // armCardWatchdog 等）抛出时成为 unhandledRejection。
+          void startStreaming().catch(err =>
+            log.error(`[DingTalk][onReplyStart] startStreaming error: ${err?.message || err}`)
+          );
         }
         typingCallbacks.onActive?.();
       },

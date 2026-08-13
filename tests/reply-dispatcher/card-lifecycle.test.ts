@@ -342,6 +342,47 @@ describe("reply-dispatcher AI card lifecycle", () => {
     }
   });
 
+  // M1 回归：cardCreationPromise 生命周期。
+  // 旧实现只在内部 try/finally 清空 cardCreationPromise，但 asyncMode /
+  // !streamingEnabled / preCreatedCard 三条 early-return 路径不进入 try，
+  // 导致 cardCreationPromise 永远指向 stale Promise。此处用 preCreatedCard
+  // 路径验证：IIFE settle 后 gate 被清空，第二次 startStreaming 调用
+  // 走 currentCardTarget 快捷路径而非复用 stale Promise。
+  it("clears cardCreationPromise after preCreatedCard early return so next startStreaming uses currentCardTarget shortcut", async () => {
+    const preCreated = { ...CARD, cardInstanceId: "pre-created" };
+    const { args } = await makeDispatcher({ preCreatedCard: preCreated });
+
+    // onReplyStart → startStreaming → preCreatedCard early return
+    args.onReplyStart();
+    // 让 IIFE 完全 settle（.finally() 清空 gate）
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockCreateAICardForTarget).not.toHaveBeenCalled();
+
+    // closeStreaming 收口
+    await args.deliver({ text: "final-1" }, { kind: "final" });
+    await args.onIdle();
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+  });
+
+  // M1 回归：card 创建同步成功（quick settle）后 closeStreaming 仍能收口。
+  // 旧实现 finally 在 IIFE settle 前清空了 cardCreationPromise，但
+  // currentCardTarget 在 finally 之前已设好，所以快路径也能过。
+  // 此测试确认 .finally() 重构后快路径不被破坏。
+  it("closes the AI card when card creation settles before onIdle (quick settle)", async () => {
+    mockCreateAICardForTarget.mockResolvedValue(CARD);
+
+    const { args } = await makeDispatcher();
+
+    args.onReplyStart();
+    // 让 card 创建 IIFE 完全 settle（mockResolvedValue 同步 resolve）
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 此时 cardCreationPromise 已被 .finally() 清空，currentCardTarget 已设好
+    await args.onIdle();
+
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+  });
+
   // 契约修复：2026.7.x 通道契约要求在 settle 时成对调用
   // markRunComplete() + markDispatchIdle()（参照 core dispatch.ts:695-696
   // 与 Feishu comment-handler.ts:324-330）。wrapper 需要把 SDK 返回的
