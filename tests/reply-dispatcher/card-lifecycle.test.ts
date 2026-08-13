@@ -273,6 +273,75 @@ describe("reply-dispatcher AI card lifecycle", () => {
     }
   });
 
+  // Blocking-1（reviewer #645）：onError 必须与 onIdle 对称先密封再收口。
+  // 若只 close 不 seal，错误收口后到达的迟到 onReplyStart / onPartialReply
+  // 仍会走 startStreaming 创建一张新的孤儿卡片，永远转圈。
+  it("seals streaming on onError so late callbacks cannot create an orphan card", async () => {
+    const { result, args } = await makeDispatcher();
+
+    args.onReplyStart();
+    await args.deliver({ text: "partial-1" }, { kind: "block" });
+
+    // 触发一次错误收口
+    await args.onError(new Error("boom"), { kind: "final" });
+
+    mockCreateAICardForTarget.mockClear();
+    mockStreamAICard.mockClear();
+
+    // 错误收口之后，模拟上游继续送达的迟到回调
+    args.onReplyStart();
+    await result.replyOptions.onPartialReply?.({ text: "late-partial" });
+    await args.deliver({ text: "late-block" }, { kind: "block" });
+
+    expect(mockCreateAICardForTarget).not.toHaveBeenCalled();
+    expect(mockStreamAICard).not.toHaveBeenCalled();
+    // 迟到 block 的内容仍以普通消息送达，不丢失
+    const sentTexts = mockSendMessage.mock.calls.map((c) => String(c[2] ?? ""));
+    expect(sentTexts.some((t) => t.includes("late-block"))).toBe(true);
+  });
+
+  // Blocking-2（reviewer #645）：watchdog 与 closeStreaming 不能双 finish。
+  // 让卡片创建 HTTP 慢返回，onIdle 触发 closeStreaming 进入 await
+  // cardCreationPromise 的等待窗口；同时把 watchdog 到期时间推过——
+  // 若入口未清理 watchdog，就会看到两次 finishAICard 调用。
+  it("does not double-finish when watchdog fires while closeStreaming is awaiting card creation", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveCard!: (card: typeof CARD) => void;
+      mockCreateAICardForTarget.mockImplementation(
+        () => new Promise((resolve) => {
+          resolveCard = resolve;
+        }),
+      );
+
+      const { args } = await makeDispatcher();
+
+      args.onReplyStart();
+      // 让 startStreaming 里的 armCardWatchdog 拿到 preCreatedCard 之外的路径
+      // （即真实创建路径）。这里 card 创建 Promise 尚未 resolve。
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockCreateAICardForTarget).toHaveBeenCalledTimes(1);
+
+      // onIdle 进入 closeStreaming：应先 clearCardWatchdog，再 await 创建完成
+      const idlePromise = args.onIdle();
+
+      // 推过 watchdog 的到期时间；若入口没清理 timer，此时 timer 会触发
+      // forceFinishStaleCard，与稍后的 closeStreaming 各调一次 finishAICard。
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1000);
+
+      // 让 card 创建完成，closeStreaming 继续执行 finishAICard
+      resolveCard(CARD);
+      await vi.advanceTimersByTimeAsync(0);
+      await idlePromise;
+      await vi.advanceTimersByTimeAsync(0);
+
+      // 只允许一次 finish：入口 clearCardWatchdog 生效
+      expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // 契约修复：2026.7.x 通道契约要求在 settle 时成对调用
   // markRunComplete() + markDispatchIdle()（参照 core dispatch.ts:695-696
   // 与 Feishu comment-handler.ts:324-330）。wrapper 需要把 SDK 返回的

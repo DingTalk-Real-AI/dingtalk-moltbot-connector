@@ -355,6 +355,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   };
 
   const closeStreaming: () => Promise<void> = async () => {
+    // ⚠️ 单飞入口：在任何 await 之前先解除 watchdog，防止收口与 watchdog
+    // 并发触发同一张卡片的 finishAICard。若不在入口清理，await
+    // cardCreationPromise / finishAICard 期间 watchdog 计时器仍会触发
+    // forceFinishStaleCard，两条路径会各自调一次 finishAICard，服务端
+    // 收到重复关闭请求，日志/计数与 outboundUserVisibleThisTurn 也会被
+    // 双写。closeStreaming 的正常/降级路径最终都会走到 finally 的
+    // clearCardWatchdog()，此处提前清理是幂等的。
+    clearCardWatchdog();
     // ✅ 先等待仍在途的卡片创建完成再快照。final 被上游抑制的回合
     // （openclaw 2026.5.x+ 的 message_tool_only / steer 认领，final 永远不会
     // 经 deliver 到达）里 onIdle → closeStreaming 是唯一收口；若此刻创建
@@ -823,6 +831,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         params.runtime.error?.(
           `dingtalk[${account.accountId}] ${info.kind} reply failed: ${String(error)}`
         );
+        // 与 onIdle 对称：先密封再收口。onError 也是本轮的终结信号，
+        // 收口后到达的迟到 onReplyStart / partial / block 不得再创建新卡片，
+        // 否则同样会产生无人收口的孤儿卡（见 typing.ts 的 sealed 机制）。
+        streamingSealed = true;
         await closeStreaming();
         typingCallbacks.onIdle?.();
         await maybeSendGroupVisibleRepliesIdleNudge();
