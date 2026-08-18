@@ -27,6 +27,7 @@ const mockSendMessage = vi.hoisted(() => vi.fn());
 const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
 const mockGetOapiAccessToken = vi.hoisted(() => vi.fn());
+const mockProcessLocalImages = vi.hoisted(() => vi.fn());
 
 vi.mock("openclaw/plugin-sdk", () => ({
   createReplyPrefixOptions: vi.fn(() => ({
@@ -62,7 +63,14 @@ vi.mock("../../src/services/messaging.ts", () => ({
 }));
 
 vi.mock("../../src/services/media/image.ts", () => ({
-  processLocalImages: vi.fn(async (s: string) => s),
+  processLocalImages: mockProcessLocalImages,
+}));
+
+vi.mock("../../src/services/media/index.ts", () => ({
+  processLocalImages: mockProcessLocalImages,
+  processVideoMarkers: vi.fn(async (s: string) => s),
+  processAudioMarkers: vi.fn(async (s: string) => s),
+  uploadAndReplaceFileMarkers: vi.fn(async (s: string) => s),
 }));
 
 vi.mock("../../src/services/media/video.ts", () => ({
@@ -75,6 +83,10 @@ vi.mock("../../src/services/media/audio.ts", () => ({
 
 vi.mock("../../src/services/media/file.ts", () => ({
   uploadAndReplaceFileMarkers: vi.fn(async (s: string) => s),
+}));
+
+vi.mock("../../src/services/media.ts", () => ({
+  processRawMediaPaths: vi.fn(async (s: string) => s),
 }));
 
 vi.mock("../../src/utils/token.ts", () => ({
@@ -122,6 +134,7 @@ describe("reply-dispatcher AI card lifecycle", () => {
       config: { debug: false, streaming: true },
     });
     mockGetOapiAccessToken.mockResolvedValue(null);
+    mockProcessLocalImages.mockImplementation(async (s: string) => s);
     mockCreateAICardForTarget.mockResolvedValue(CARD);
     mockStreamAICard.mockResolvedValue(undefined);
     mockFinishAICard.mockResolvedValue(undefined);
@@ -300,11 +313,15 @@ describe("reply-dispatcher AI card lifecycle", () => {
     expect(sentTexts.some((t) => t.includes("late-block"))).toBe(true);
   });
 
-  // Blocking-2（reviewer #645）：watchdog 与 closeStreaming 不能双 finish。
-  // 让卡片创建 HTTP 慢返回，onIdle 触发 closeStreaming 进入 await
-  // cardCreationPromise 的等待窗口；同时把 watchdog 到期时间推过——
-  // 若入口未清理 watchdog，就会看到两次 finishAICard 调用。
-  it("does not double-finish when watchdog fires while closeStreaming is awaiting card creation", async () => {
+  // Blocking-2（#647 review）：入口 clearCardWatchdog 盖不到目标窗口。
+  // 卡片创建在途时 watchdog 尚未装上，入口清理是空操作；await 返回后
+  // IIFE 才 arm，随后 closeStreaming 还要走完 getOapiAccessToken /
+  // processLocalImages 等媒体链路。该链路超过 CARD_WATCHDOG_TIMEOUT_MS
+  // 时 watchdog 与 closeStreaming 会各调一次 finishAICard。
+  // 旧用例在推进时钟之后才 resolveCard，推进期间 timer 未装上，对
+  // 「入口清理有/无」不敏感。此处按 review 复刻：创建在途 → onIdle →
+  // resolve 后媒体处理挂住 → 再拨过 watchdog。
+  it("does not double-finish when watchdog fires while closeStreaming is processing media", async () => {
     vi.useFakeTimers();
     try {
       let resolveCard!: (card: typeof CARD) => void;
@@ -314,28 +331,41 @@ describe("reply-dispatcher AI card lifecycle", () => {
         }),
       );
 
+      let releaseMedia!: (s: string) => void;
+      mockGetOapiAccessToken.mockResolvedValue("oapi-token");
+      mockProcessLocalImages.mockImplementation(
+        (s: string) => new Promise((resolve) => {
+          releaseMedia = () => resolve(s);
+        }),
+      );
+
       const { args } = await makeDispatcher();
 
       args.onReplyStart();
-      // 让 startStreaming 里的 armCardWatchdog 拿到 preCreatedCard 之外的路径
-      // （即真实创建路径）。这里 card 创建 Promise 尚未 resolve。
       await vi.advanceTimersByTimeAsync(0);
       expect(mockCreateAICardForTarget).toHaveBeenCalledTimes(1);
 
-      // onIdle 进入 closeStreaming：应先 clearCardWatchdog，再 await 创建完成
+      // 创建仍在途：入口 clearCardWatchdog 此时是空操作
       const idlePromise = args.onIdle();
+      await vi.advanceTimersByTimeAsync(0);
 
-      // 推过 watchdog 的到期时间；若入口没清理 timer，此时 timer 会触发
-      // forceFinishStaleCard，与稍后的 closeStreaming 各调一次 finishAICard。
-      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1000);
-
-      // 让 card 创建完成，closeStreaming 继续执行 finishAICard
+      // 创建完成 → IIFE 重新 arm watchdog → closeStreaming 进入媒体处理并挂住。
+      // 入口 clear 是空操作，必须靠 finish 单飞闭合双 finish。
       resolveCard(CARD);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mockProcessLocalImages).toHaveBeenCalled();
+      expect(mockFinishAICard).not.toHaveBeenCalled();
+
+      // 媒体仍在途时拨过 watchdog：forceFinishStaleCard 先 finish 一次
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1000);
+      expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+
+      // closeStreaming 随后也会走 finish；单飞后仍只能是一次
+      releaseMedia("partial-text");
       await vi.advanceTimersByTimeAsync(0);
       await idlePromise;
       await vi.advanceTimersByTimeAsync(0);
 
-      // 只允许一次 finish：入口 clearCardWatchdog 生效
       expect(mockFinishAICard).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();

@@ -236,6 +236,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   const CARD_WATCHDOG_TIMEOUT_MS = 10 * 60 * 1000;
   let cardWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
   let watchdogCard: AICardInstance | null = null;
+  // 同一张卡片只允许一次 finish。入口 clearCardWatchdog 盖不到
+  // 「卡片创建在途 → await 返回后 IIFE 才 arm → 媒体处理超过 timeout」
+  // 的窗口（#647 review）；closeStreaming 与 forceFinishStaleCard 必须
+  // 共享单飞，否则两条路径会各调一次 finishAICard。
+  let finishInFlight: Promise<void> | null = null;
+  const finishedCardIds = new Set<string>();
 
   const clearCardWatchdog = () => {
     if (cardWatchdogTimer) {
@@ -243,6 +249,29 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       cardWatchdogTimer = null;
     }
     watchdogCard = null;
+  };
+
+  const finishCardOnce = async (card: AICardInstance, text: string): Promise<void> => {
+    const id = card.cardInstanceId;
+    if (id && finishedCardIds.has(id)) {
+      log.info(`[DingTalk][finishCardOnce] 卡片已收口，跳过重复 finish`);
+      return;
+    }
+    if (finishInFlight) {
+      log.info(`[DingTalk][finishCardOnce] 收口进行中，等待进行中的 finish`);
+      await finishInFlight;
+      return;
+    }
+    const run = (async () => {
+      await finishAICard(card, text, account.config as DingtalkConfig, log);
+      if (id) finishedCardIds.add(id);
+    })();
+    finishInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (finishInFlight === run) finishInFlight = null;
+    }
   };
 
   const forceFinishStaleCard = async () => {
@@ -260,7 +289,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       `[DingTalk][cardWatchdog] 卡片超过 ${CARD_WATCHDOG_TIMEOUT_MS / 60000} 分钟未收口（settle 未到达），强制结束以避免永久转圈`,
     );
     try {
-      await finishAICard(staleCard, timeoutText, account.config as DingtalkConfig, log);
+      await finishCardOnce(staleCard, timeoutText);
       outboundUserVisibleThisTurn = true;
       log.info(`[DingTalk][cardWatchdog] ✅ 强制收口成功`);
     } catch (err: any) {
@@ -355,9 +384,15 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     // 的 cardCreationPromise 永远指向已 settle 的 stale Promise，后续
     // startStreaming 调用会复用 stale Promise 而非走 currentCardTarget
     // 快捷路径或重新创建）。
-    creation.finally(() => {
+    // 不用 creation.finally(...)：其派生 Promise 是独立 rejection 通道，
+    // 调用方的 creation.catch() 盖不住它。Node 22 默认
+    // --unhandled-rejections=throw，派生 Promise 被丢弃时仍会打
+    // UNHANDLED REJECTION 并退出进程（#647 review）。
+    // then(onFulfilled, onRejected) 在两个 handler 都不抛时不会再 reject。
+    const clearCreationGate = () => {
       if (cardCreationPromise === creation) cardCreationPromise = null;
-    });
+    };
+    void creation.then(clearCreationGate, clearCreationGate);
     return creation;
   };
 
@@ -511,12 +546,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
       log.info(`[DingTalk][closeStreaming] 准备调用 finishAICard，文本长度=${finalText.length}`);
       log.debug(`[DingTalk][closeStreaming] 最终发送内容长度=${finalText.length}`);
-      await finishAICard(
-        cardSnapshot as any,
-        finalText,
-        account.config as DingtalkConfig,
-        log
-      );
+      await finishCardOnce(cardSnapshot as any, finalText);
       outboundUserVisibleThisTurn = true;
       log.info(`[DingTalk][closeStreaming] ✅ AI Card 关闭成功`);
     } catch (error: any) {
