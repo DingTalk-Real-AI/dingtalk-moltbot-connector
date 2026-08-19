@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.25-beta.0] - 2026-08-19
+
+> **社区验证版本** — 修复 AI Card 在 error、缺失 settle/final 或上游挂死时可能无法结束的问题。该版本先发布到 npm `beta` 标签；经社区验证后再晋升为正式版 `v0.8.25`。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.25-beta.0.md)。
+> **Community validation release** — fixes AI Cards that could remain unfinished when error, missing settle/final, or upstream hangs occur. This version is published under npm's `beta` tag before promotion to GA `v0.8.25`.
+
+### 修复 / Fixed
+
+- 🐛 **AI Card 生命周期可靠性 ([#644](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/644) / [#647](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/647))** — 收口时等待在途卡片创建完成；在 idle/error 收口前密封流式入口，迟到回调不再生成无人收口的卡片；补充 10 分钟 watchdog 覆盖上游挂死；并通过单飞保护避免 watchdog 与正常收口重复结束同一张卡片。对早返回创建路径的 promise gate 也完成清理，避免后续回合错误复用已完成的 promise。
+  **AI Card lifecycle reliability** — waits for in-flight card creation during close; seals streaming before idle/error close so late callbacks cannot create orphan cards; adds a 10-minute watchdog for upstream hangs; and single-flights card finalization to prevent watchdog/normal-close double finishes. The creation-promise gate is also cleared for early-return paths.
+
+### 升级 / Upgrade
+
+```bash
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.25-beta.0
+openclaw gateway restart
+```
+
 ## [0.8.24] - 2026-07-24
 
 晋升自 `0.8.24-beta.0` 的 GA 版本，与 beta.0 内容完全一致，经过社区验证后正式发布。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.24.md)。  
