@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.25] - 2026-08-20
+
+晋升自 `0.8.25-beta.0` 的 GA 版本；源码与 beta 完全一致。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.25.md)。
+GA promotion of `0.8.25-beta.0`; source code is identical to the beta release.
+
+### 升级 / Upgrade
+
+```bash
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.25
+openclaw gateway restart
+```
+
+以下内容沿用自 `0.8.25-beta.0` 的修复 / Same fixes as `0.8.25-beta.0`：
+
 ## [0.8.25-beta.0] - 2026-08-19
 
 > **社区验证版本** — 修复 AI Card 在 error、缺失 settle/final 或上游挂死时可能无法结束的问题。该版本先发布到 npm `beta` 标签；经社区验证后再晋升为正式版 `v0.8.25`。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.25-beta.0.md)。
