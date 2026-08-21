@@ -95,12 +95,33 @@ const sessionQueues = new Map<string, Promise<void>>();
 const sessionLastActivity = new Map<string, number>();
 const SESSION_QUEUE_TTL = 5 * 60 * 1000; // 5分钟
 
+/**
+ * /stop 抢跑代际计数。
+ * 每个 queueKey 独立递增；每条入队任务在 .then 体内核对自己捕获的代际，
+ * 不一致即跳过 —— 用于在 /stop 抢跑时丢弃所有已排队但尚未执行的 msg2..msgN。
+ * (sessionQueues 只是 Promise 链的引用 Map，仅 delete 不会取消已构造的 .then 回调，
+ * 因此必须配合代际检查才能真正"清空待处理消息队列"。)
+ */
+const sessionGenerations = new Map<string, number>();
+
+/**
+ * 严格匹配 "/stop" 或 "stop"。
+ * 必须是 OpenClaw isAbortRequestText 的子集 —— 命中即抢跑，未命中走原队列。
+ * 不能放宽，否则会出现"绕了队列但 SDK 不 abort"的事故。
+ */
+function isStopCommand(text: string): boolean {
+  if (!text) return false;
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, " ");
+  return normalized === "/stop" || normalized === "stop" || normalized === "停止";
+}
+
 function cleanupExpiredSessionQueues(): void {
   const now = Date.now();
   for (const [queueKey, lastActivity] of sessionLastActivity.entries()) {
     if (now - lastActivity > SESSION_QUEUE_TTL) {
       sessionQueues.delete(queueKey);
       sessionLastActivity.delete(queueKey);
+      sessionGenerations.delete(queueKey);
     }
   }
 }
@@ -1704,6 +1725,36 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
   // - sharedMemoryAcrossConversations: true 时，所有消息共享同一队列
   const queueKey = `${baseSessionId}:${matchedAgentId}`;
 
+  // ===== /stop 抢跑：识别到 stop 命令时不入队，直接走 SDK abort 链路 =====
+  // 设计要点：
+  //  1) 提升代际 sessionGenerations[queueKey] += 1，让所有已排队但未执行的 task
+  //     在自己的 .then 体内检测到代际不匹配并 return，等价于"清空待处理消息队列"。
+  //  2) 不调 sessionQueues.delete(queueKey)：in-flight 的 msg1 仍持有 currentTask，
+  //     让它在 .finally 自然清理；同时 stop 之后到达的 msg5 会自然挂在原链尾部，
+  //     不破坏同 session 的串行化语义。
+  //  3) 抢跑路径直接 await handleDingTalkMessageInternal(...)，与 in-flight 的 msg1
+  //     在 event loop 中并发执行；内部走到 dispatchReplyFromConfig 时，SDK 第一步
+  //     的 tryFastAbortFromMessage 会调用 abortSessionRunTarget，触发 msg1 的
+  //     AbortSignal，并自动回 "⚙️ Agent was aborted."。
+  const inboundText = extractMessageContent(data).text?.trim() ?? "";
+  if (inboundText && isStopCommand(inboundText)) {
+    const nextGen = (sessionGenerations.get(queueKey) ?? 0) + 1;
+    sessionGenerations.set(queueKey, nextGen);
+    sessionLastActivity.set(queueKey, Date.now());
+    log?.info?.(`[stop抢跑] queueKey=${queueKey} gen->${nextGen} text=${inboundText.slice(0, 50)}`);
+
+    try {
+      await handleDingTalkMessageInternal({
+        ...params,
+        preCreatedCard: undefined,
+        emotionAlreadyAdded: false,
+      });
+    } catch (err: any) {
+      log?.error?.(`[stop抢跑] 异常: ${err?.message ?? err}`);
+    }
+    return;
+  }
+  // ===== 以下走原有入队流程 =====
   try {
 
     // 更新会话活跃时间
@@ -1764,9 +1815,18 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
       }
     }
 
+    // 入队时同步捕获当前代际；轮到自己执行时核对，
+    // 若已被 /stop 抢跑提升过，则跳过本条消息（实现"清空待处理队列"语义）。
+    const taskGeneration = sessionGenerations.get(queueKey) ?? 0;
+
     // 创建当前消息的处理任务
     const currentTask = previousTask
       .then(async () => {
+        const currentGen = sessionGenerations.get(queueKey) ?? 0;
+        if (currentGen !== taskGeneration) {
+          log?.info?.(`[队列] 消息已被 /stop 取消，跳过 queueKey=${queueKey} gen=${taskGeneration}->${currentGen}`);
+          return;
+        }
         log?.info?.(`[队列] 开始处理消息，queueKey=${queueKey}`);
         await handleDingTalkMessageInternal({ ...params, preCreatedCard, emotionAlreadyAdded: isQueueBusy });
         log?.info?.(`[队列] 消息处理完成，queueKey=${queueKey}`);
