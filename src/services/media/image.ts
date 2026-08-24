@@ -42,7 +42,8 @@ export async function processLocalImages(
     for (const match of mdMatches) {
       const [fullMatch, alt, rawPath] = match;
       const cleanPath = rawPath.replace(/\\ /g, ' ');
-      const {mediaId} = await uploadMediaToDingTalk(cleanPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      const uploaded = await uploadMediaToDingTalk(cleanPath, 'image', oapiToken, 20 * 1024 * 1024, log);
+      const mediaId = uploaded?.mediaId;
       if (mediaId) {
         // 使用标准 Markdown 图片语法：![文案](mediaId)
         const replacement = `![${alt}](${mediaId})`;
