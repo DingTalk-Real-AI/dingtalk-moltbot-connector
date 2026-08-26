@@ -158,6 +158,75 @@ describe("core/connection", () => {
     expect(client!.disconnect).toHaveBeenCalled();
   });
 
+  it("keeps the processing heartbeat active until all concurrent messages settle", async () => {
+    const realSetInterval = globalThis.setInterval;
+    const processingTicks: Array<() => void> = [];
+    const intervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation(((handler: TimerHandler, timeout?: number, ...args: any[]) => {
+        if (timeout === 15_000 && typeof handler === "function") {
+          processingTicks.push(() => handler(...args));
+          return { unref: vi.fn() } as unknown as NodeJS.Timeout;
+        }
+        return realSetInterval(handler, timeout, ...args);
+      }) as typeof globalThis.setInterval);
+    const controller = new AbortController();
+    let releaseFirst!: () => void;
+    let markFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const firstPending = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let handled = 0;
+    const messageHandler = vi.fn(async () => {
+      handled += 1;
+      if (handled === 1) {
+        markFirstStarted();
+        await firstPending;
+      }
+    });
+
+    try {
+      const { monitorSingleAccount } = await import("../../src/core/connection");
+      const running = monitorSingleAccount(
+        createOpts({ abortSignal: controller.signal, messageHandler }),
+      );
+      await vi.waitFor(() => expect(FakeDWClient.latestInstance).toBeTruthy());
+      const client = FakeDWClient.latestInstance!;
+      const event = (id: string) => ({
+        headers: { messageId: id },
+        data: JSON.stringify({
+          conversationType: "1",
+          senderStaffId: "u1",
+          conversationId: "c1",
+          msgId: id,
+          sessionWebhook: "http://webhook",
+          text: { content: id },
+        }),
+      });
+
+      const first = client.callback!(event("m-concurrent-1"));
+      await firstStarted;
+      await client.callback!(event("m-concurrent-2"));
+
+      mockLoggerDebug.mockClear();
+      expect(processingTicks.length).toBeGreaterThan(0);
+      processingTicks.at(-1)!();
+      expect(mockLoggerDebug).toHaveBeenCalledWith("📝 消息处理中，更新 socket 可用时间");
+
+      releaseFirst();
+      await first;
+      controller.abort();
+      await running;
+    } finally {
+      releaseFirst?.();
+      controller.abort();
+      intervalSpy.mockRestore();
+    }
+  });
+
   it("rejects (not unhandled) when connect() fails", async () => {
     const { monitorSingleAccount } = await import("../../src/core/connection");
     FakeDWClient.nextConnectError = new Error("connection refused");

@@ -208,7 +208,7 @@ export async function monitorSingleAccount(
   
   // ============ 消息处理活跃标记 ============
   // 用于在消息处理期间防止心跳超时触发重连
-  let activeMessageProcessing = false;
+  let activeMessageProcessingCount = 0;
   let messageProcessingKeepAliveTimer: NodeJS.Timeout | null = null;
   
   /**
@@ -217,18 +217,19 @@ export async function monitorSingleAccount(
    * 防止长时间处理（如复杂的 AI 任务）触发心跳超时
    */
   function markMessageProcessingStart() {
-    activeMessageProcessing = true;
+    activeMessageProcessingCount += 1;
     lastSocketAvailableTime = Date.now();
 
-    // 清理旧的定时器（如果存在）
+    // One timer covers all concurrent callbacks. Restarting it for every message allows a short
+    // second callback to clear the heartbeat while an older long-running callback is still active.
     if (messageProcessingKeepAliveTimer) {
-      clearInterval(messageProcessingKeepAliveTimer);
+      return;
     }
 
     // 每 15 秒更新一次（< TIMEOUT_THRESHOLD = 20s），保证 AI 长任务期间不会
     // 因为 elapsed 超过 20 秒触发 keepAlive 兜底重连
     messageProcessingKeepAliveTimer = setInterval(() => {
-      if (activeMessageProcessing) {
+      if (activeMessageProcessingCount > 0) {
         lastSocketAvailableTime = Date.now();
         logger.debug(`📝 消息处理中，更新 socket 可用时间`);
       }
@@ -241,7 +242,11 @@ export async function monitorSingleAccount(
    * 标记消息处理结束，停止定期更新机制
    */
   function markMessageProcessingEnd() {
-    activeMessageProcessing = false;
+    activeMessageProcessingCount = Math.max(0, activeMessageProcessingCount - 1);
+    if (activeMessageProcessingCount > 0) {
+      lastSocketAvailableTime = Date.now();
+      return;
+    }
     
     if (messageProcessingKeepAliveTimer) {
       clearInterval(messageProcessingKeepAliveTimer);

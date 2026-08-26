@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendProactive = vi.hoisted(() => vi.fn());
+const mockDispatchReplyFromConfig = vi.hoisted(() => vi.fn());
 
 vi.mock("../../src/utils/utils-legacy.ts", () => ({
   isMessageProcessed: vi.fn(() => false),
   markMessageProcessed: vi.fn(),
-  buildSessionContext: vi.fn(() => ({ sessionId: "s1" })),
+  buildSessionContext: vi.fn(() => ({
+    sessionPeerId: "u1",
+    peerId: "u1",
+    chatType: "direct",
+  })),
   getAccessToken: vi.fn(async () => "tk"),
   getOapiAccessToken: vi.fn(async () => null),
   DINGTALK_API: "https://api.dingtalk.com",
@@ -47,8 +52,14 @@ vi.mock("../../src/runtime.ts", () => ({
         resolveEnvelopeFormatOptions: vi.fn(() => ({})),
         formatAgentEnvelope: vi.fn(() => "body"),
         finalizeInboundContext: vi.fn(() => ({})),
-        withReplyDispatcher: vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })),
-        dispatchReplyFromConfig: vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })),
+        withReplyDispatcher: vi.fn(async ({ run, onSettled }) => {
+          try {
+            return await run();
+          } finally {
+            onSettled?.();
+          }
+        }),
+        dispatchReplyFromConfig: mockDispatchReplyFromConfig,
       },
       routing: {
         buildAgentSessionKey: vi.fn(() => "session"),
@@ -60,6 +71,10 @@ vi.mock("../../src/runtime.ts", () => ({
 describe("handleDingTalkMessage policy guards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDispatchReplyFromConfig.mockResolvedValue({
+      queuedFinal: false,
+      counts: { final: 0 },
+    });
   });
 
   async function callHandle(params: {
@@ -152,5 +167,42 @@ describe("handleDingTalkMessage policy guards", () => {
       },
     });
     expect(mockSendProactive).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands concurrent messages to OpenClaw queue resolution without connector serialization", async () => {
+    let releaseFirst!: () => void;
+    const firstDispatch = new Promise<{ queuedFinal: false; counts: { final: 0 } }>((resolve) => {
+      releaseFirst = () => resolve({ queuedFinal: false, counts: { final: 0 } });
+    });
+    mockDispatchReplyFromConfig
+      .mockImplementationOnce(async () => await firstDispatch)
+      .mockResolvedValue({ queuedFinal: false, counts: { final: 0 } });
+
+    const data = {
+      msgtype: "text",
+      text: { content: "hi" },
+      conversationType: "1",
+      conversationId: "cid1",
+      senderStaffId: "u1",
+      msgId: "msg-1",
+    };
+    const first = callHandle({ config: { dmPolicy: "open" }, data });
+    await vi.waitFor(() => expect(mockDispatchReplyFromConfig).toHaveBeenCalledTimes(1));
+
+    const second = callHandle({
+      config: { dmPolicy: "open" },
+      data: { ...data, msgId: "msg-2", text: { content: "pause" } },
+    });
+    try {
+      await vi.waitFor(() => expect(mockDispatchReplyFromConfig).toHaveBeenCalledTimes(2));
+      expect(
+        mockDispatchReplyFromConfig.mock.calls.every(
+          ([request]) => request.replyOptions.allowActiveQueueResolution === true,
+        ),
+      ).toBe(true);
+    } finally {
+      releaseFirst();
+      await Promise.all([first, second]);
+    }
   });
 });
