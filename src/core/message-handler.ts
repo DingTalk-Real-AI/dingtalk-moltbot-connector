@@ -1424,10 +1424,10 @@ async function handleDingTalkMessageInternal(
     const toField = isDirect ? senderId : data.conversationId;
     log?.info?.(`构建 inbound context: isDirect=${isDirect}, senderId=${senderId}, conversationId=${data.conversationId}, To=${toField}`);
 
-    const ctxPayload = core.channel.reply.finalizeInboundContext({
+    const ctxPayload = {
       Body: body,
       BodyForAgent: finalContent,
-      RawBody: userContent,
+      rawText: userContent,
       CommandBody: userContent,
       From: senderId,
       To: toField,  // ✅ 修复：单聊用 senderId，群聊用 conversationId
@@ -1447,10 +1447,10 @@ async function handleDingTalkMessageInternal(
       // 当前机器人的加密身份（用于多机器人协作时让上层 Agent 引用 / 互相 @）
       BotChatbotUserId: data.chatbotUserId,
       BotChatbotCorpId: data.chatbotCorpId,
-    } as any);
+    };
 
     // 创建 reply dispatcher，使用解析后的 agentId
-    const { dispatcher, replyOptions, markDispatchIdle, markRunComplete, getAsyncModeResponse } = createDingtalkReplyDispatcher({
+    const { dispatcherOptions, replyOptions, getAsyncModeResponse } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,
       runtime: runtime as RuntimeEnv,
@@ -1487,25 +1487,12 @@ async function handleDingTalkMessageInternal(
       log?.info?.(`注入卡片链接路由指令: ${linkRoutingPrompt.slice(0, 100)}...`);
     }
 
-    // 使用 SDK 的 dispatchReplyFromConfig
-    const dispatchResult = await core.channel.reply.withReplyDispatcher({
-      dispatcher,
-      onSettled: () => {
-        // 2026.7.x 通道契约：settle 时成对调用 markRunComplete + markDispatchIdle
-        //（typing 控制器需要两个信号齐全才会 cleanup/seal，缺 markRunComplete
-        // 会导致 typing keepalive 无法收口，见 openclaw typing.ts:189-197）。
-        markRunComplete?.();
-        markDispatchIdle();
-      },
-      run: async () => {
-        const result = await core.channel.reply.dispatchReplyFromConfig({
-          ctx: ctxPayload,
-          cfg,
-          dispatcher,
-          replyOptions,
-        });
-        return result;
-      },
+    // The buffered host boundary finalizes the context and settles typing on every exit.
+    const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+      ctx: { ...ctxPayload, BodyForAgent: finalContent },
+      cfg,
+      dispatcherOptions,
+      replyOptions,
     });
 
     const { queuedFinal, counts } = dispatchResult;

@@ -27,7 +27,7 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
 vi.mock("../../src/game-xiyou/index.ts", () => ({ isGamificationCommand: () => false }));
 vi.mock("../../src/reply-dispatcher.ts", () => ({
   createDingtalkReplyDispatcher: () => ({
-    dispatcher: {}, replyOptions: {}, markDispatchIdle() {}, markRunComplete() {},
+    dispatcherOptions: {}, replyOptions: {}, getAsyncModeResponse: () => "",
   }),
 }));
 vi.mock("../../src/runtime.ts", async () => {
@@ -40,8 +40,7 @@ vi.mock("../../src/runtime.ts", async () => {
         resolveEnvelopeFormatOptions: () => ({}),
         formatAgentEnvelope: ({ body }: { body: string }) => body,
         finalizeInboundContext: (ctx: unknown) => ctx,
-        withReplyDispatcher: async ({ run }: { run: () => Promise<unknown> }) => run(),
-        dispatchReplyFromConfig: state.dispatch,
+        dispatchReplyWithBufferedBlockDispatcher: state.dispatch,
       },
     },
   }) };

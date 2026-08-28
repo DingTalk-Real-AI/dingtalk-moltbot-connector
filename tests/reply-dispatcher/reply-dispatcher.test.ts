@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockCreateReplyDispatcherWithTyping = vi.hoisted(() => vi.fn());
 const mockResolveDingtalkAccount = vi.hoisted(() => vi.fn());
 const mockGetDingtalkRuntime = vi.hoisted(() => vi.fn());
 const mockCreateAICardForTarget = vi.hoisted(() => vi.fn());
@@ -12,7 +11,7 @@ const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
 const mockGetOapiAccessToken = vi.hoisted(() => vi.fn());
 
-vi.mock("openclaw/plugin-sdk", () => ({
+vi.mock("openclaw/plugin-sdk/channel-outbound", () => ({
   createReplyPrefixOptions: vi.fn(() => ({
     onModelSelected: vi.fn(),
   })),
@@ -93,20 +92,12 @@ describe("reply-dispatcher", () => {
         code.includes("QpsLimit")
       );
     });
-    mockCreateReplyDispatcherWithTyping.mockImplementation((args: any) => {
-      (globalThis as any).__dispatcherArgs = args;
-      return { dispatcher: {}, replyOptions: {}, markDispatchIdle: vi.fn() };
-    });
     mockGetDingtalkRuntime.mockReturnValue({
       channel: {
         text: {
           resolveTextChunkLimit: () => 4000,
           resolveChunkMode: () => "markdown",
           chunkTextWithMode: (text: string) => [text],
-        },
-        reply: {
-          resolveHumanDelayConfig: () => ({ enabled: false }),
-          createReplyDispatcherWithTyping: mockCreateReplyDispatcherWithTyping,
         },
       },
     });
@@ -138,7 +129,7 @@ describe("reply-dispatcher", () => {
       sessionWebhook: "http://webhook",
     });
 
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     expect(args).toBeTruthy();
 
     await args.onReplyStart();
@@ -214,7 +205,7 @@ describe("reply-dispatcher", () => {
 
     // 触发 onReplyStart 来预创建 AI Card，保证 onPartialReply 里
     // currentCardTarget 存在、会真的走到 streamAICard 调用。
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
 
     await result.replyOptions.onPartialReply?.({ text: "partial-qps-content" });
@@ -254,7 +245,7 @@ describe("reply-dispatcher", () => {
     // 无 response.status，isQpsLimitError 返回 false
     mockStreamAICard.mockRejectedValueOnce(otherError);
 
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
 
     await result.replyOptions.onPartialReply?.({ text: "partial-other" });
@@ -281,7 +272,7 @@ describe("reply-dispatcher", () => {
       error: vi.fn(),
       debug: vi.fn(),
     };
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: runtime as any,
@@ -291,7 +282,7 @@ describe("reply-dispatcher", () => {
       sessionWebhook: "http://webhook",
     });
 
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     await args.onIdle();
 
@@ -317,7 +308,7 @@ describe("reply-dispatcher", () => {
       debug: vi.fn(),
     };
     mockSendMarkdownMessage.mockClear();
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {
         messages: { groupChat: { visibleReplies: "automatic" } },
       } as any,
@@ -329,7 +320,7 @@ describe("reply-dispatcher", () => {
       sessionWebhook: "http://webhook",
     });
 
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     await args.onIdle();
 

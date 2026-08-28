@@ -37,7 +37,7 @@ describe("channel plugin", () => {
       clientSecret: "secret",
       config: { debug: false, allowFrom: ["user1"], groupPolicy: "open" },
     });
-    mockSendText.mockResolvedValue({ processQueryKey: "pqk-1" });
+    mockSendText.mockResolvedValue({ ok: true, processQueryKey: "pqk-1" });
     mockSendMedia.mockResolvedValue({ ok: true, processQueryKey: "pqk-media" });
     mockProbe.mockResolvedValue({ ok: true, botName: "bot-1" });
     mockMonitorProvider.mockResolvedValue(undefined);
@@ -88,6 +88,7 @@ describe("channel plugin", () => {
       accountId: "main",
     } as any);
     expect(textRes.messageId).toBe("pqk-1");
+    expect(textRes.target).toEqual({ kind: "conversation", id: "user1" });
 
     const mediaRes = await plugin.outbound.sendMedia({
       cfg: {} as any,
@@ -97,6 +98,28 @@ describe("channel plugin", () => {
       accountId: "main",
     } as any);
     expect(mediaRes.messageId).toBe("pqk-media");
+    expect(mediaRes.target).toEqual({ kind: "conversation", id: "user1" });
+  });
+
+  it.each(["default", "named"])("setup contract enables the %s account", async (accountId) => {
+    const { dingtalkPlugin } = await import("../../src/channel");
+    const cfg = { channels: { "dingtalk-connector": { enabled: false } } };
+    const resolvedAccountId = accountId === "default"
+      ? dingtalkPlugin.setupContract!.resolveAccountId!({ cfg, input: {} })
+      : accountId;
+    const updated = dingtalkPlugin.setupContract!.applyAccountConfig({ cfg, accountId: resolvedAccountId, input: {} });
+    const channel = updated.channels!["dingtalk-connector"] as any;
+    expect(accountId === "default" ? channel.enabled : channel.accounts.named.enabled).toBe(true);
+    expect(cfg.channels["dingtalk-connector"].enabled).toBe(false);
+  });
+
+  it.each(["sendText", "sendMedia"])("%s rejects failed sends instead of returning a receipt", async (method) => {
+    const { dingtalkPlugin } = await import("../../src/channel");
+    mockSendText.mockResolvedValue({ ok: false, error: "send rejected" });
+    mockSendMedia.mockResolvedValue({ ok: false, error: "send rejected" });
+    await expect((dingtalkPlugin.outbound as any)[method]({
+      cfg: {}, to: "user1", text: "hello", mediaUrl: "/tmp/a.png", accountId: "main",
+    })).rejects.toThrow("send rejected");
   });
 
   it("sendMedia validates required parameters", async () => {
