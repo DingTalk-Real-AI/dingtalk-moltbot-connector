@@ -44,7 +44,6 @@ import {
   addEmotionReply,
   recallEmotionReply,
 } from "../utils/utils-legacy.ts";
-import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -1158,7 +1157,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   }
 
   // 获取 Agent 工作空间路径
-  const agentWorkspaceDir = resolveAgentWorkspaceDir(cfg, matchedAgentId);
+  const agentWorkspaceDir = getDingtalkRuntime().agent.resolveAgentWorkspaceDir(cfg, matchedAgentId);
   log?.info?.(`Agent 工作空间路径: ${agentWorkspaceDir}`);
 
   // 构建消息内容
@@ -1442,7 +1441,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     const ctxPayload = {
       Body: body,
       BodyForAgent: finalContent,
-      RawBody: userContent,
+      rawText: userContent,
       CommandBody: userContent,
       From: senderId,
       To: toField,  // ✅ 修复：单聊用 senderId，群聊用 conversationId

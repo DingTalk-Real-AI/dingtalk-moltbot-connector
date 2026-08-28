@@ -1,6 +1,7 @@
 import { createRequire as nodeCreateRequire } from "node:module";
 import type { ChannelPlugin } from "openclaw/plugin-sdk/core";
 import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
+import { defineChannelSetupContract } from "openclaw/plugin-sdk/channel-setup";
 import {
   createDefaultChannelRuntimeState,
   DEFAULT_ACCOUNT_ID,
@@ -226,7 +227,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       ];
     },
   },
-  setup: {
+  setupContract: defineChannelSetupContract({ fields: {}, adapter: {
     resolveAccountId: () => DEFAULT_ACCOUNT_ID,
     applyAccountConfig: ({ cfg, accountId }) => {
       const isDefault = !accountId || accountId === DEFAULT_ACCOUNT_ID;
@@ -262,7 +263,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         },
       };
     },
-  },
+  } }),
   setupWizard: dingtalkOnboardingAdapter as any,
   messaging: {
     normalizeTarget: (raw) => normalizeDingtalkTarget(raw) ?? undefined,

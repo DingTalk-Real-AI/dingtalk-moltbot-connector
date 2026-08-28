@@ -101,6 +101,15 @@ describe("channel plugin", () => {
     expect(mediaRes.target).toEqual({ kind: "conversation", id: "user1" });
   });
 
+  it.each(["default", "named"])("setup contract enables the %s account", async (accountId) => {
+    const { dingtalkPlugin } = await import("../../src/channel");
+    const cfg = { channels: { "dingtalk-connector": { enabled: false } } };
+    const updated = dingtalkPlugin.setupContract!.applyAccountConfig({ cfg, accountId, input: {} });
+    const channel = updated.channels!["dingtalk-connector"] as any;
+    expect(accountId === "default" ? channel.enabled : channel.accounts.named.enabled).toBe(true);
+    expect(cfg.channels["dingtalk-connector"].enabled).toBe(false);
+  });
+
   it.each(["sendText", "sendMedia"])("%s rejects failed sends instead of returning a receipt", async (method) => {
     const { dingtalkPlugin } = await import("../../src/channel");
     mockSendText.mockResolvedValue({ ok: false, error: "send rejected" });

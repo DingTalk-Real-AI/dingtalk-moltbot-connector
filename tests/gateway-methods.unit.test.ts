@@ -56,7 +56,7 @@ const mockLogger = {
  */
 function createMockApi() {
   const handlers = new Map<string, Function>();
-  const currentConfig = vi.fn(() => mockConfig);
+  const currentConfig = vi.fn<OpenClawPluginApi['runtime']['config']['current']>(() => mockConfig);
   
   const api: Partial<OpenClawPluginApi> = {
     logger: mockLogger,
@@ -288,7 +288,7 @@ describe('Gateway Methods - 配置读取', () => {
     expect((await mockApi.callMethod('dingtalk-connector.status')).result.configured).toBe(true);
 
     mockApi.currentConfig.mockReturnValue({ channels: { 'dingtalk-connector': {
-      enabled: false, clientId: '', clientSecret: '',
+      enabled: false,
     } } });
     const { ok, result } = await mockApi.callMethod('dingtalk-connector.status');
     expect(ok).toBe(true);
