@@ -104,7 +104,10 @@ describe("channel plugin", () => {
   it.each(["default", "named"])("setup contract enables the %s account", async (accountId) => {
     const { dingtalkPlugin } = await import("../../src/channel");
     const cfg = { channels: { "dingtalk-connector": { enabled: false } } };
-    const updated = dingtalkPlugin.setupContract!.applyAccountConfig({ cfg, accountId, input: {} });
+    const resolvedAccountId = accountId === "default"
+      ? dingtalkPlugin.setupContract!.resolveAccountId!({ cfg, input: {} })
+      : accountId;
+    const updated = dingtalkPlugin.setupContract!.applyAccountConfig({ cfg, accountId: resolvedAccountId, input: {} });
     const channel = updated.channels!["dingtalk-connector"] as any;
     expect(accountId === "default" ? channel.enabled : channel.accounts.named.enabled).toBe(true);
     expect(cfg.channels["dingtalk-connector"].enabled).toBe(false);
