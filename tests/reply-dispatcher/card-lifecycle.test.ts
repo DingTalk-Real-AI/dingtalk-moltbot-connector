@@ -11,12 +11,10 @@
  *    新卡片——新卡片没有任何收口方，必然变成孤儿转圈卡；
  * 3. 迟到 block 携带的文本（steer/followup 认领回合的实际回复）应降级为
  *    普通消息发出，而不是丢弃或写进孤儿卡片；
- * 4. wrapper 需向 message-handler 透传 SDK 的 markRunComplete，以满足
- *    2026.7.x 的通道契约（markRunComplete + markDispatchIdle 成对调用）。
+ * Core now owns dispatcher creation and typing settlement.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockCreateReplyDispatcherWithTyping = vi.hoisted(() => vi.fn());
 const mockResolveDingtalkAccount = vi.hoisted(() => vi.fn());
 const mockGetDingtalkRuntime = vi.hoisted(() => vi.fn());
 const mockCreateAICardForTarget = vi.hoisted(() => vi.fn());
@@ -29,7 +27,7 @@ const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
 const mockGetOapiAccessToken = vi.hoisted(() => vi.fn());
 const mockProcessLocalImages = vi.hoisted(() => vi.fn());
 
-vi.mock("openclaw/plugin-sdk", () => ({
+vi.mock("openclaw/plugin-sdk/channel-outbound", () => ({
   createReplyPrefixOptions: vi.fn(() => ({
     onModelSelected: vi.fn(),
   })),
@@ -122,7 +120,7 @@ async function makeDispatcher(overrides: Record<string, unknown> = {}) {
     sessionWebhook: "http://webhook",
     ...overrides,
   } as any);
-  const args = (globalThis as any).__dispatcherArgs;
+  const args = result.dispatcherOptions;
   return { result, args };
 }
 
@@ -142,25 +140,12 @@ describe("reply-dispatcher AI card lifecycle", () => {
     mockSendTextMessage.mockResolvedValue({ ok: true });
     mockSendMarkdownMessage.mockResolvedValue({ ok: true });
     mockIsQpsLimitError.mockReturnValue(false);
-    mockCreateReplyDispatcherWithTyping.mockImplementation((args: any) => {
-      (globalThis as any).__dispatcherArgs = args;
-      return {
-        dispatcher: {},
-        replyOptions: {},
-        markDispatchIdle: vi.fn(),
-        markRunComplete: vi.fn(),
-      };
-    });
     mockGetDingtalkRuntime.mockReturnValue({
       channel: {
         text: {
           resolveTextChunkLimit: () => 4000,
           resolveChunkMode: () => "markdown",
           chunkTextWithMode: (text: string) => [text],
-        },
-        reply: {
-          resolveHumanDelayConfig: () => ({ enabled: false }),
-          createReplyDispatcherWithTyping: mockCreateReplyDispatcherWithTyping,
         },
       },
     });
@@ -413,26 +398,11 @@ describe("reply-dispatcher AI card lifecycle", () => {
     expect(mockFinishAICard).toHaveBeenCalledTimes(1);
   });
 
-  // 契约修复：2026.7.x 通道契约要求在 settle 时成对调用
-  // markRunComplete() + markDispatchIdle()（参照 core dispatch.ts:695-696
-  // 与 Feishu comment-handler.ts:324-330）。wrapper 需要把 SDK 返回的
-  // markRunComplete 透传给 message-handler。
-  it("exposes markRunComplete from the underlying SDK dispatcher", async () => {
-    const sdkMarkRunComplete = vi.fn();
-    mockCreateReplyDispatcherWithTyping.mockImplementation((args: any) => {
-      (globalThis as any).__dispatcherArgs = args;
-      return {
-        dispatcher: {},
-        replyOptions: {},
-        markDispatchIdle: vi.fn(),
-        markRunComplete: sdkMarkRunComplete,
-      };
-    });
-
-    const { result } = await makeDispatcher();
-
-    expect(typeof result.markRunComplete).toBe("function");
-    result.markRunComplete();
-    expect(sdkMarkRunComplete).toHaveBeenCalledTimes(1);
+  it("preserves per-agent human delay overrides and global defaults", async () => {
+    const { args } = await makeDispatcher({ cfg: { agents: {
+      defaults: { humanDelay: { mode: "custom", minMs: 200, maxMs: 900 } },
+      list: [{ id: "a1", humanDelay: { minMs: 400 } }],
+    } } });
+    expect(args.humanDelay).toEqual({ mode: "custom", minMs: 400, maxMs: 900 });
   });
 });

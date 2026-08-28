@@ -1,5 +1,5 @@
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId , normalizeResolvedSecretInputString, normalizeSecretInputString } from "../sdk/helpers.ts";
-import type { ClawdbotConfig } from "openclaw/plugin-sdk";
+import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
 import type {
   DingtalkConfig,
   DingtalkAccountConfig,

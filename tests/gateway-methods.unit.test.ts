@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/core';
 import { registerGatewayMethods } from '../src/gateway-methods';
 import {
   DINGTALK_CARD_BRIDGE_SYMBOL,
@@ -36,11 +36,6 @@ const mockConfig = {
   },
 };
 
-// Mock loadConfig：gateway-methods.ts 通过动态 import 获取配置
-vi.mock('openclaw/plugin-sdk/config-runtime', () => ({
-  loadConfig: () => mockConfig,
-}));
-
 vi.mock('../src/services/messaging/card', () => ({
   createAICardForTarget: mockCreateAICardForTarget,
   streamAICard: mockStreamAICard,
@@ -61,9 +56,11 @@ const mockLogger = {
  */
 function createMockApi() {
   const handlers = new Map<string, Function>();
+  const currentConfig = vi.fn(() => mockConfig);
   
   const api: Partial<OpenClawPluginApi> = {
     logger: mockLogger,
+    runtime: { config: { current: currentConfig } } as OpenClawPluginApi['runtime'],
     registerGatewayMethod: vi.fn((name: string, handler: Function) => {
       handlers.set(name, handler);
     }),
@@ -72,6 +69,7 @@ function createMockApi() {
   return {
     api: api as OpenClawPluginApi,
     handlers,
+    currentConfig,
     callMethod: async (name: string, params: unknown = {}) => {
       const handler = handlers.get(name);
       if (!handler) {
@@ -284,23 +282,17 @@ describe('Gateway Methods - 状态检查', () => {
 });
 
 describe('Gateway Methods - 配置读取', () => {
-  it('应该能通过 loadConfig 获取配置', async () => {
-    const { api, handlers } = createMockApi();
-    registerGatewayMethods(api);
+  it('reads the current host snapshot after configuration changes', async () => {
+    const mockApi = createMockApi();
+    registerGatewayMethods(mockApi.api);
+    expect((await mockApi.callMethod('dingtalk-connector.status')).result.configured).toBe(true);
 
-    const handler = handlers.get('dingtalk-connector.status');
-    expect(handler).toBeDefined();
-
-    const respond = vi.fn();
-    const context = {
-      deps: {},
-    };
-
-    await handler!({ context, params: {}, respond });
-
-    // 验证 respond 被调用且成功（loadConfig 已被 mock 返回 mockConfig）
-    expect(respond).toHaveBeenCalled();
-    expect(respond.mock.calls[0][0]).toBe(true);
+    mockApi.currentConfig.mockReturnValue({ channels: { 'dingtalk-connector': {
+      enabled: false, clientId: '', clientSecret: '',
+    } } });
+    const { ok, result } = await mockApi.callMethod('dingtalk-connector.status');
+    expect(ok).toBe(true);
+    expect(result).toMatchObject({ configured: false, enabled: false });
   });
 });
 
@@ -631,6 +623,25 @@ describe('Card Gateway Methods - 参数验证', () => {
     expect(bridge).toBe((globalThis as any)[DINGTALK_CARD_BRIDGE_SYMBOL]);
     expect(typeof bridge?.create).toBe('function');
     expect(typeof bridge?.update).toBe('function');
+  });
+
+  it('card bridge reads refreshed config and honors an explicit caller snapshot', async () => {
+    installDingtalkCardBridge(mockApi.api);
+    const bridge = getDingtalkCardBridge()!;
+    const updatedConfig = { channels: { 'dingtalk-connector': {
+      ...mockConfig.channels['dingtalk-connector'], clientId: 'updated_client',
+    } } };
+    mockApi.currentConfig.mockReturnValue(updatedConfig);
+
+    await bridge.create({ target: 'user:user_123' });
+    expect(mockCreateAICardForTarget).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientId: 'updated_client' }), expect.any(Object), mockLogger,
+    );
+
+    await bridge.create({ target: 'user:user_123', cfg: mockConfig });
+    expect(mockCreateAICardForTarget).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientId: 'test_client_id' }), expect.any(Object), mockLogger,
+    );
   });
 });
 

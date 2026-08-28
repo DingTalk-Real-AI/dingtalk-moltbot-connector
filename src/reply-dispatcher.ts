@@ -17,14 +17,11 @@ interface ReplyPayload {
   [key: string]: any;
 }
 
-// ✅ 动态导入 channel-runtime 模块
-const channelRuntimeModule = await import("openclaw/plugin-sdk/channel-runtime") as any;
-
-const {
+import { resolveAgentConfig } from "openclaw/plugin-sdk/agent-scope-runtime";
+import type { ReplyDispatcherWithTypingOptions } from "openclaw/plugin-sdk/reply-runtime";
+import {
   createReplyPrefixOptions,
-  createTypingCallbacks,
-  logTypingFailure,
-} = channelRuntimeModule;
+} from "openclaw/plugin-sdk/channel-outbound";
 
 import { createLoggerFromConfig } from "./utils/logger.ts";
 import { CHANNEL_ID } from "./channel.ts";
@@ -177,30 +174,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       log.error(`[DingTalk][Fallback] ❌ 错误消息发送失败：${fallbackErr.message}`);
     }
   };
-
-  // 打字指示器回调（钉钉暂不支持，预留接口）
-  const typingCallbacks = createTypingCallbacks({
-    start: async () => {
-      // 钉钉暂不支持打字指示器
-    },
-    stop: async () => {
-      // 钉钉暂不支持打字指示器
-    },
-    onStartError: (err: any) =>
-      logTypingFailure({
-        log: (message: any) => params.runtime.log?.(message),
-        channel: CHANNEL_ID,
-        action: "start",
-        error: err,
-      }),
-    onStopError: (err: any) =>
-      logTypingFailure({
-        log: (message: any) => params.runtime.log?.(message),
-        channel: CHANNEL_ID,
-        action: "stop",
-        error: err,
-      }),
-  });
 
   const textChunkLimit = core.channel.text.resolveTextChunkLimit(
     cfg,
@@ -642,10 +615,15 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     }
   };
 
-  const { dispatcher, replyOptions, markDispatchIdle, markRunComplete } =
-    core.channel.reply.createReplyDispatcherWithTyping({
+  const delayDefaults = cfg.agents?.defaults?.humanDelay;
+  const delayOverrides = resolveAgentConfig(cfg, agentId)?.humanDelay;
+  const dispatcherOptions: ReplyDispatcherWithTypingOptions = {
       ...prefixOptions,
-      humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, agentId),
+      humanDelay: delayDefaults || delayOverrides ? {
+        mode: delayOverrides?.mode ?? delayDefaults?.mode,
+        minMs: delayOverrides?.minMs ?? delayDefaults?.minMs,
+        maxMs: delayOverrides?.maxMs ?? delayDefaults?.maxMs,
+      } : undefined,
       onReplyStart: () => {
         log.info(`[DingTalk][onReplyStart] 开始回复，流式 enabled=${streamingEnabled}`);
         // 每次 onReplyStart 都是全新的回复周期，清空去重集合
@@ -660,7 +638,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             log.error(`[DingTalk][onReplyStart] startStreaming error: ${err?.message || err}`)
           );
         }
-        typingCallbacks.onActive?.();
       },
       deliver: async (payload, info) => {
         let text = payload.text ?? "";
@@ -877,12 +854,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         // 否则同样会产生无人收口的孤儿卡（见 typing.ts 的 sealed 机制）。
         streamingSealed = true;
         await closeStreaming();
-        typingCallbacks.onIdle?.();
         await maybeSendGroupVisibleRepliesIdleNudge();
       },
       onIdle: async () => {
         log.info(`[DingTalk][onIdle] 回复空闲，关闭 AI Card`);
-        typingCallbacks.onIdle?.();
         // 先密封再收口：onIdle 意味着本轮 dispatcher 已 settle
         //（reservation 语义保证 onIdle 只在 markComplete 之后触发），
         // 此后任何迟到回调都不允许再创建新卡片。
@@ -892,16 +867,13 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       },
       onCleanup: () => {
         log.info(`[DingTalk][onCleanup] 清理回调`);
-        typingCallbacks.onCleanup?.();
       },
-    });
+    };
 
-  // 构建完整的 replyOptions：replyOptions 只包含 onReplyStart、onTypingController、onTypingCleanup
-  // deliver、onError、onIdle、onCleanup 等回调已经在 createReplyDispatcherWithTyping 的参数中定义
+  // Core owns dispatcher creation and typing settlement; DingTalk owns card callbacks.
   return {
-    dispatcher,
+    dispatcherOptions,
     replyOptions: {
-      ...replyOptions,  // ✅ 包含 onReplyStart、onTypingController、onTypingCleanup
       onModelSelected,
       ...(streamingEnabled && {
         onPartialReply: async (payload: ReplyPayload) => {
@@ -1008,11 +980,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
     },
-    markDispatchIdle,
-    // 2026.7.x 通道契约要求 settle 时成对调用 markRunComplete + markDispatchIdle
-    //（参照 openclaw core dispatch.ts 与 Feishu 插件 comment-handler）；
-    // 旧版 SDK（2026.4.9）同样返回该方法，可选调用保证向后兼容。
-    markRunComplete: () => markRunComplete?.(),
     getAsyncModeResponse: () => asyncModeFullResponse,
   };
 }

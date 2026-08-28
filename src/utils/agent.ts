@@ -5,7 +5,8 @@
  */
 import * as os from "node:os";
 import * as path from "node:path";
-import type { ClawdbotConfig } from "openclaw/plugin-sdk";
+import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
+import { resolveDefaultAgentId } from "openclaw/plugin-sdk/agent-scope-runtime";
 
 /**
  * 解析 Agent 工作空间路径
@@ -53,7 +54,7 @@ export function resolveAgentWorkspaceDir(
   }
   
   // 2. 使用默认路径规则
-  if (agentId === 'main' || agentId === cfg.defaultAgent) {
+  if (agentId === 'main' || agentId === resolveDefaultAgentId(cfg)) {
     // 默认 Agent 使用 ~/.openclaw/workspace
     return path.join(os.homedir(), '.openclaw', 'workspace');
   }

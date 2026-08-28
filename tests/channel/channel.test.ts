@@ -37,7 +37,7 @@ describe("channel plugin", () => {
       clientSecret: "secret",
       config: { debug: false, allowFrom: ["user1"], groupPolicy: "open" },
     });
-    mockSendText.mockResolvedValue({ processQueryKey: "pqk-1" });
+    mockSendText.mockResolvedValue({ ok: true, processQueryKey: "pqk-1" });
     mockSendMedia.mockResolvedValue({ ok: true, processQueryKey: "pqk-media" });
     mockProbe.mockResolvedValue({ ok: true, botName: "bot-1" });
     mockMonitorProvider.mockResolvedValue(undefined);
@@ -88,6 +88,7 @@ describe("channel plugin", () => {
       accountId: "main",
     } as any);
     expect(textRes.messageId).toBe("pqk-1");
+    expect(textRes.target).toEqual({ kind: "conversation", id: "user1" });
 
     const mediaRes = await plugin.outbound.sendMedia({
       cfg: {} as any,
@@ -97,6 +98,16 @@ describe("channel plugin", () => {
       accountId: "main",
     } as any);
     expect(mediaRes.messageId).toBe("pqk-media");
+    expect(mediaRes.target).toEqual({ kind: "conversation", id: "user1" });
+  });
+
+  it.each(["sendText", "sendMedia"])("%s rejects failed sends instead of returning a receipt", async (method) => {
+    const { dingtalkPlugin } = await import("../../src/channel");
+    mockSendText.mockResolvedValue({ ok: false, error: "send rejected" });
+    mockSendMedia.mockResolvedValue({ ok: false, error: "send rejected" });
+    await expect((dingtalkPlugin.outbound as any)[method]({
+      cfg: {}, to: "user1", text: "hello", mediaUrl: "/tmp/a.png", accountId: "main",
+    })).rejects.toThrow("send rejected");
   });
 
   it("sendMedia validates required parameters", async () => {
