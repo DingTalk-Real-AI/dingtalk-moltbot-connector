@@ -5,6 +5,15 @@
 /** 新会话触发命令 */
 export const NEW_SESSION_COMMANDS = ['/new', '/reset', '/clear', '新会话', '重新开始', '清空对话'];
 
+/** 默认的允许命令白名单 */
+export const DEFAULT_ALLOWED_COMMANDS = [
+  '/new', '/reset', '/clear'
+];
+
+/** 默认的拦截提示消息 */
+export const DEFAULT_COMMAND_BLOCK_MESSAGE =
+  '抱歉，我目前仅支持以下会话管理命令：\n/new、/reset、/clear\n如需其他帮助，请联系管理员。';
+
 /**
  * 媒体类消息类型集合。
  *

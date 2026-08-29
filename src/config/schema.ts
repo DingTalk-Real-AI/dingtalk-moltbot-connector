@@ -15,6 +15,23 @@ const ToolPolicySchema = z
   .optional();
 
 /**
+ * Command policy for controlling allowed commands in group chats.
+ * - mode: "open" (allow all), "allowlist" (only allow listed), "denylist" (block listed)
+ * - allow: list of allowed commands (used when mode="allowlist")
+ * - deny: list of denied commands (used when mode="denylist")
+ * - blockMessage: custom message shown when command is blocked
+ */
+const CommandPolicySchema = z
+  .object({
+    mode: z.enum(["open", "allowlist", "denylist"]).optional().default("open"),
+    allow: z.array(z.string()).optional(),
+    deny: z.array(z.string()).optional(),
+    blockMessage: z.string().optional(),
+  })
+  .strict()
+  .optional();
+
+/**
  * Group session scope for routing DingTalk group messages.
  * - "group" (default): one session per group chat
  * - "group_sender": one session per (group + sender)
@@ -85,6 +102,9 @@ const DingtalkSharedConfigShape = {
   enableMediaUpload: z.boolean().optional(),
   systemPrompt: z.string().optional(),
   groupReplyMode: GroupReplyModeSchema,
+  commandPolicy: CommandPolicySchema, // Command whitelist/blacklist for group chats
+  dmCommandPolicy: CommandPolicySchema, // Command whitelist/blacklist for DM chats
+  dmCommandAllowlist: z.array(z.union([z.string(), z.number()])).optional(), // Users who can execute any command in DM
 };
 
 /**

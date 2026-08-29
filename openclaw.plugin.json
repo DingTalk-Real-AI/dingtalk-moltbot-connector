@@ -249,6 +249,79 @@
               "markdown"
             ]
           },
+          "commandPolicy": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "allowlist",
+                  "denylist"
+                ],
+                "default": "open"
+              },
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "deny": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "blockMessage": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "dmCommandPolicy": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "allowlist",
+                  "denylist"
+                ],
+                "default": "open"
+              },
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "deny": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "blockMessage": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "dmCommandAllowlist": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
+          },
           "accounts": {
             "type": "object",
             "additionalProperties": {
@@ -473,6 +546,79 @@
                     "text",
                     "markdown"
                   ]
+                },
+                "commandPolicy": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "allowlist",
+                        "denylist"
+                      ],
+                      "default": "open"
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "deny": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "blockMessage": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "dmCommandPolicy": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "allowlist",
+                        "denylist"
+                      ],
+                      "default": "open"
+                    },
+                    "allow": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "deny": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "blockMessage": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "dmCommandAllowlist": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
                 }
               },
               "additionalProperties": false

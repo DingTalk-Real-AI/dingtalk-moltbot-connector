@@ -51,9 +51,10 @@ import {
   processAudioMarkers, 
   uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
-import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
+import { sendProactive, sendMessage, type AICardTarget } from "../services/messaging/index.ts";
 import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
+import { checkCommandPolicy, type CommandPolicy } from "../policy.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
 import {
@@ -1050,6 +1051,64 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         return;
       }
     }
+
+    // ===== DM 命令策略检查 =====
+    // 检查 dmCommandAllowlist 白名单人员（白名单中的人员可执行任意命令）
+    const dmCommandAllowlist: (string | number)[] = config.dmCommandAllowlist || [];
+    const normalizedSenderId = String(senderId || '');
+    const isInDmCommandAllowlist = dmCommandAllowlist.length > 0 &&
+      dmCommandAllowlist.map(id => String(id)).includes(normalizedSenderId);
+
+    log?.info?.(`DM 命令策略检查: dmCommandAllowlist=${JSON.stringify(dmCommandAllowlist)}, isInDmCommandAllowlist=${isInDmCommandAllowlist}`);
+
+    // 如果发送者不在 DM 命令白名单中，则应用 commandPolicy
+    if (!isInDmCommandAllowlist) {
+      // 使用 data.text?.content 获取原始消息内容（与群聊保持一致）
+      const rawText = data.text?.content || '';
+      const commandPolicy = config.dmCommandPolicy as CommandPolicy | undefined;
+
+      log?.info?.(`DM 命令策略检查: dmCommandPolicy=${JSON.stringify(commandPolicy)}, rawText="${rawText.slice(0, 50)}"`);
+
+      // 只在配置了 dmCommandPolicy 且 mode 不是 open 时进行检查
+      if (commandPolicy && commandPolicy.mode !== 'open') {
+        const result = checkCommandPolicy(rawText, commandPolicy);
+
+        log?.info?.(`DM 命令策略检查: checkCommandPolicy result=${JSON.stringify(result)}`);
+
+        if (!result.isAllowed) {
+          log?.warn?.(`DM 命令被拦截: 消息="${rawText.slice(0, 50)}" 不符合 dmCommandPolicy (mode=${commandPolicy.mode})`);
+
+          // 确保 senderId 存在才能发送拦截提示
+          if (!senderId) {
+            log?.error?.(`无法发送 DM 命令拦截提示: senderId 为空`);
+            return;
+          }
+
+          try {
+            log?.info?.(`发送 DM 命令拦截提示 via sessionWebhook`);
+            // 使用 sendMessage 通过 sessionWebhook 发送拦截提示，而不是 sendProactive
+            // sessionWebhook 不需要额外的权限验证，与普通消息回复方式一致
+            await sendMessage(
+              config,
+              sessionWebhook,
+              result.blockMessage || '抱歉，该命令不可用。如需帮助，请联系管理员。',
+              {
+                useMarkdown: true,
+                log,
+              }
+            );
+            log?.info?.(`发送 DM 命令拦截提示成功`);
+          } catch (err: any) {
+            log?.error?.(`发送 DM 命令拦截提示失败: ${err.message}`);
+          }
+          return;
+        }
+      } else {
+        log?.info?.(`DM 命令策略检查: 跳过检查 (commandPolicy 未配置或为 open)`);
+      }
+    } else {
+      log?.info?.(`DM 命令白名单用户: senderId=${senderId}，跳过 commandPolicy 检查`);
+    }
   }
 
   // ===== 群聊 Policy 检查 =====
@@ -1116,6 +1175,34 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
           });
         } catch (err: any) {
           log?.error?.(`发送群聊 allowlist 提示失败: ${err.message}`);
+        }
+        return;
+      }
+    }
+
+    // ===== 群聊命令策略检查 =====
+    // 根据 commandPolicy 配置限制群聊用户可使用的命令
+    // 使用 content.text（extractMessageContent 处理后的内容）作为命令检查输入
+    const rawText = content.text || '';
+    const commandPolicy = config.commandPolicy as CommandPolicy | undefined;
+
+    // 只在配置了 commandPolicy 且 mode 不是 open 时进行检查
+    if (commandPolicy && commandPolicy.mode !== 'open') {
+      const result = checkCommandPolicy(rawText, commandPolicy);
+
+      if (!result.isAllowed) {
+        log?.warn?.(`群聊命令被拦截: 消息="${rawText.slice(0, 50)}" 不符合 commandPolicy (mode=${commandPolicy.mode})`);
+
+        try {
+          await sendProactive(config, { openConversationId: conversationId },
+            result.blockMessage || '抱歉，该命令不可用。如需帮助，请联系管理员。', {
+            msgType: 'text',
+            useAICard: false,
+            fallbackToNormal: true,
+            log,
+          });
+        } catch (err: any) {
+          log?.error?.(`发送群聊命令拦截提示失败: ${err.message}`);
         }
         return;
       }
