@@ -134,7 +134,7 @@
       "npmSpec": "@dingtalk-real-ai/dingtalk-connector",
       "localPath": "extensions/dingtalk",
       "defaultChoice": "npm",
-      "minHostVersion": "2026.8.1-beta.3"
+      "minHostVersion": ">=2026.8.1-beta.3"
     },
     "installDependencies": true
   },
