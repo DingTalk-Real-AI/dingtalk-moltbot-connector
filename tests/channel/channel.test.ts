@@ -49,6 +49,11 @@ describe("channel plugin", () => {
     expect(plugin.id).toBe("dingtalk-connector");
     expect(plugin.capabilities.media).toBe(true);
     expect(plugin.meta.label).toBe("DingTalk");
+    expect(plugin.secrets.secretTargetRegistryEntries.map((entry: any) => entry.pathPattern)).toEqual([
+      "channels.dingtalk-connector.accounts.*.clientSecret",
+      "channels.dingtalk-connector.clientSecret",
+    ]);
+    expect(plugin.secrets.collectRuntimeConfigAssignments).toBeTypeOf("function");
   });
 
   it("config helpers update account flags", async () => {

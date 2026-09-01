@@ -37,7 +37,8 @@ describe("sdk/helpers", () => {
   describe("isSecretInputRef", () => {
     it("returns true for valid ref", () => {
       expect(isSecretInputRef({ source: "env", provider: "system", id: "KEY" })).toBe(true);
-      expect(isSecretInputRef({ source: "file", provider: "p", id: "i" })).toBe(true);
+      expect(isSecretInputRef({ source: "file", provider: "p", id: "value" })).toBe(true);
+      expect(isSecretInputRef({ source: "store", provider: "default", id: "KEY" })).toBe(true);
     });
 
     it("returns false for invalid values", () => {
@@ -45,6 +46,8 @@ describe("sdk/helpers", () => {
       expect(isSecretInputRef("str")).toBe(false);
       expect(isSecretInputRef({ source: "env" })).toBe(false);
       expect(isSecretInputRef({ source: "env", provider: "", id: "x" })).toBe(false);
+      expect(isSecretInputRef({ source: "store", provider: "Default", id: "KEY" })).toBe(false);
+      expect(isSecretInputRef({ source: "store", provider: "default", id: "bad-id" })).toBe(false);
     });
   });
 
@@ -52,7 +55,7 @@ describe("sdk/helpers", () => {
     it("handles strings, refs, and unknown", () => {
       expect(normalizeSecretInputString("  abc  ")).toBe("abc");
       expect(normalizeSecretInputString("")).toBeUndefined();
-      expect(normalizeSecretInputString({ source: "env", provider: "p", id: "i" })).toBe("<env:p:i>");
+      expect(normalizeSecretInputString({ source: "env", provider: "p", id: "KEY" })).toBe("<env:p:KEY>");
       expect(normalizeSecretInputString(42)).toBeUndefined();
     });
   });
@@ -71,7 +74,7 @@ describe("sdk/helpers", () => {
     });
 
     it("returns ref string for file/exec", () => {
-      expect(resolveSecretInputValue({ source: "file", provider: "p", id: "f" })).toBe("<file:p:f>");
+      expect(resolveSecretInputValue({ source: "file", provider: "p", id: "value" })).toBe("<file:p:value>");
     });
 
     it("returns undefined for non-matching", () => {
@@ -93,7 +96,7 @@ describe("sdk/helpers", () => {
     });
 
     it("file/exec always configured", () => {
-      expect(hasConfiguredSecretInput({ source: "file", provider: "p", id: "f" })).toBe(true);
+      expect(hasConfiguredSecretInput({ source: "file", provider: "p", id: "value" })).toBe(true);
     });
 
     it("returns false for unknown", () => {
@@ -110,32 +113,22 @@ describe("sdk/helpers", () => {
       expect(() => normalizeResolvedSecretInputString({ value: "  ", path: "p" })).toThrow("non-empty");
     });
 
-    it("resolves env ref", () => {
-      process.env.TEST_SECRET_VAR = "resolved";
-      expect(
+    it("rejects an unresolved env ref in the strict path", () => {
+      expect(() =>
         normalizeResolvedSecretInputString({
           value: { source: "env", provider: "p", id: "TEST_SECRET_VAR" },
           path: "p",
         }),
-      ).toBe("resolved");
+      ).toThrow("must be resolved by OpenClaw");
     });
 
-    it("throws when env var not set", () => {
+    it("rejects unresolved non-env refs", () => {
       expect(() =>
         normalizeResolvedSecretInputString({
-          value: { source: "env", provider: "p", id: "UNSET_VAR" },
+          value: { source: "store", provider: "default", id: "KEY" },
           path: "p",
         }),
-      ).toThrow("not set");
-    });
-
-    it("returns ref string for file/exec", () => {
-      expect(
-        normalizeResolvedSecretInputString({
-          value: { source: "file", provider: "p", id: "f" },
-          path: "p",
-        }),
-      ).toBe("<file:p:f>");
+      ).toThrow("must be resolved by OpenClaw");
     });
 
     it("throws for non-string non-ref", () => {

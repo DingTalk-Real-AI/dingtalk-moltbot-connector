@@ -29,6 +29,7 @@ import { dingtalkOnboardingAdapter } from "./onboarding.ts";
 import { monitorDingtalkProvider } from "./core/provider.ts";
 import { sendTextToDingTalk, sendMediaToDingTalk } from "./services/messaging/index.ts";
 import type { ResolvedDingtalkAccount, DingtalkConfig } from "./types/index.ts";
+import { channelSecrets } from "./secret-contract.ts";
 
 /** Channel identifier used across the plugin. Single source of truth. */
 export const CHANNEL_ID = "dingtalk-connector" as const;
@@ -85,6 +86,7 @@ const meta = {
 
 export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
   id: CHANNEL_ID,
+  secrets: channelSecrets,
   meta: {
     ...meta,
   },

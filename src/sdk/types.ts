@@ -20,7 +20,7 @@ export type SecretInput =
  * SecretInput 引用类型
  */
 export interface SecretInputRef {
-  source: "env" | "file" | "exec";
+  source: "env" | "file" | "exec" | "store";
   provider: string;
   id: string;
 }
