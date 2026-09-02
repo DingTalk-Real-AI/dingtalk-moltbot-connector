@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 修复 / Fixed
 
-- ⏸️ **消息中断与并发队列 ([#653](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/653))** — 将会话队列和 interrupt 语义交给 OpenClaw Host，避免暂停/中断消息被 Connector 队列阻塞；并发回调期间持续保持连接心跳。
-  **Interrupt and concurrent queue ownership** — delegates session queue and interrupt semantics to the OpenClaw host so pause/interrupt messages are not blocked by a connector queue, while keeping the connection heartbeat active until every concurrent callback settles.
+- ⏸️ **消息中断与并发队列 ([#653](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/653))** — 将会话队列和 interrupt 语义交给 OpenClaw Host，并显式使用 Host 注入的低层 Channel 派发入口，避免暂停/中断消息被 Connector 队列或旧回合阻塞；并发回调期间持续保持连接心跳。
+  **Interrupt and concurrent queue ownership** — delegates session queue and interrupt semantics to the OpenClaw host and explicitly uses the host-injected low-level channel dispatcher, so pause/interrupt messages are not blocked by a connector queue or an active older turn, while keeping the connection heartbeat active until every concurrent callback settles.
 
 ## [0.8.25] - 2026-08-20
 

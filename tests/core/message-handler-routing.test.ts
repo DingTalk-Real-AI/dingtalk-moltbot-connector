@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   dispatch: vi.fn(),
+  lowLevelDispatch: vi.fn(),
   workspace: vi.fn((_cfg: unknown, id: string) => `/workspaces/${id}`),
   send: vi.fn(async () => undefined),
   recall: vi.fn(async () => undefined),
@@ -41,6 +42,7 @@ vi.mock("../../src/runtime.ts", async () => {
         formatAgentEnvelope: ({ body }: { body: string }) => body,
         finalizeInboundContext: (ctx: unknown) => ctx,
         dispatchReplyWithBufferedBlockDispatcher: state.dispatch,
+        dispatchReplyFromConfig: state.lowLevelDispatch,
       },
     },
   }) };
@@ -93,6 +95,7 @@ describe("DingTalk host-owned routing", () => {
     await handleDingTalkMessage(message());
     await processed(1);
     expect(state.workspace).toHaveBeenCalledWith(expect.anything(), "support");
+    expect(state.dispatch.mock.calls[0][0].dispatchReplyFromConfig).toBe(state.lowLevelDispatch);
     expect(state.dispatch.mock.calls[0][0].ctx).toMatchObject({
       SessionKey: "agent:support:dingtalk-connector:group:group-1", AccountId: "TeamBot",
     });
