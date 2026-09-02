@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendProactive = vi.hoisted(() => vi.fn());
-const mockDispatchReplyFromConfig = vi.hoisted(() => vi.fn());
+const mockDispatchReply = vi.hoisted(() => vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })));
 
 vi.mock("../../src/utils/utils-legacy.ts", () => ({
   isMessageProcessed: vi.fn(() => false),
@@ -37,9 +37,8 @@ vi.mock("../../src/services/messaging/index.ts", () => ({
 
 vi.mock("../../src/reply-dispatcher.ts", () => ({
   createDingtalkReplyDispatcher: vi.fn(() => ({
-    dispatcher: {},
+    dispatcherOptions: {},
     replyOptions: {},
-    markDispatchIdle: vi.fn(),
     getAsyncModeResponse: vi.fn(() => ""),
   })),
   normalizeSlashCommand: vi.fn((s: string) => s),
@@ -47,19 +46,12 @@ vi.mock("../../src/reply-dispatcher.ts", () => ({
 
 vi.mock("../../src/runtime.ts", () => ({
   getDingtalkRuntime: vi.fn(() => ({
+    agent: { resolveAgentWorkspaceDir: vi.fn(() => "/tmp/dingtalk-test-workspace") },
     channel: {
       reply: {
         resolveEnvelopeFormatOptions: vi.fn(() => ({})),
         formatAgentEnvelope: vi.fn(() => "body"),
-        finalizeInboundContext: vi.fn(() => ({})),
-        withReplyDispatcher: vi.fn(async ({ run, onSettled }) => {
-          try {
-            return await run();
-          } finally {
-            onSettled?.();
-          }
-        }),
-        dispatchReplyFromConfig: mockDispatchReplyFromConfig,
+        dispatchReplyWithBufferedBlockDispatcher: mockDispatchReply,
       },
       routing: {
         buildAgentSessionKey: vi.fn(() => "session"),
@@ -71,10 +63,6 @@ vi.mock("../../src/runtime.ts", () => ({
 describe("handleDingTalkMessage policy guards", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDispatchReplyFromConfig.mockResolvedValue({
-      queuedFinal: false,
-      counts: { final: 0 },
-    });
   });
 
   async function callHandle(params: {
@@ -99,6 +87,24 @@ describe("handleDingTalkMessage policy guards", () => {
       data: { msgtype: "text", text: { content: "" }, conversationType: "1" },
     });
     expect(mockSendProactive).not.toHaveBeenCalled();
+  });
+
+  it("dispatches admitted text with the bot context added during ingress", async () => {
+    await callHandle({
+      config: { dmPolicy: "open", clientId: "bot-for-this-turn" },
+      data: {
+        msgId: "message-1", msgtype: "text", text: { content: "hello" },
+        conversationType: "1", senderStaffId: "u1", conversationId: "cid1",
+      },
+    });
+    expect(mockDispatchReply).toHaveBeenCalledWith(expect.objectContaining({
+      ctx: expect.objectContaining({
+        BodyForAgent: expect.stringContaining("Current bot clientId: bot-for-this-turn"),
+        rawText: "hello", CommandBody: "hello",
+        SessionKey: "session", AccountId: "acc-1", MessageSid: "message-1",
+      }),
+      dispatcherOptions: expect.any(Object),
+    }));
   });
 
   it("blocks DM when allowlist empty", async () => {
@@ -174,7 +180,7 @@ describe("handleDingTalkMessage policy guards", () => {
     const firstDispatch = new Promise<{ queuedFinal: false; counts: { final: 0 } }>((resolve) => {
       releaseFirst = () => resolve({ queuedFinal: false, counts: { final: 0 } });
     });
-    mockDispatchReplyFromConfig
+    mockDispatchReply
       .mockImplementationOnce(async () => await firstDispatch)
       .mockResolvedValue({ queuedFinal: false, counts: { final: 0 } });
 
@@ -187,16 +193,16 @@ describe("handleDingTalkMessage policy guards", () => {
       msgId: "msg-1",
     };
     const first = callHandle({ config: { dmPolicy: "open" }, data });
-    await vi.waitFor(() => expect(mockDispatchReplyFromConfig).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(mockDispatchReply).toHaveBeenCalledTimes(1));
 
     const second = callHandle({
       config: { dmPolicy: "open" },
       data: { ...data, msgId: "msg-2", text: { content: "pause" } },
     });
     try {
-      await vi.waitFor(() => expect(mockDispatchReplyFromConfig).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(mockDispatchReply).toHaveBeenCalledTimes(2));
       expect(
-        mockDispatchReplyFromConfig.mock.calls.every(
+        mockDispatchReply.mock.calls.every(
           ([request]) => request.replyOptions.allowActiveQueueResolution === true,
         ),
       ).toBe(true);

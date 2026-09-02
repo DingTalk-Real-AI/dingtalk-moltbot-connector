@@ -7,8 +7,6 @@ const mockProbeDingtalk = vi.hoisted(() => vi.fn());
 const mockHasConfiguredSecretInput = vi.hoisted(() => vi.fn());
 const mockAddWildcardAllowFrom = vi.hoisted(() => vi.fn());
 
-vi.mock("openclaw/plugin-sdk", () => ({}));
-
 vi.mock("openclaw/plugin-sdk/setup", () => ({
   promptSingleChannelSecretInput: mockPromptSingleChannelSecretInput,
 }));

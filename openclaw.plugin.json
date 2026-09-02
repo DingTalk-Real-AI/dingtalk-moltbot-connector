@@ -52,12 +52,14 @@
                     "enum": [
                       "env",
                       "file",
-                      "exec"
+                      "exec",
+                      "store"
                     ]
                   },
                   "provider": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$"
                   },
                   "id": {
                     "type": "string",
@@ -69,7 +71,25 @@
                   "provider",
                   "id"
                 ],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "source": {
+                          "const": "store"
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "id": {
+                          "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+                        }
+                      }
+                    }
+                  }
+                ]
               }
             ]
           },
@@ -283,12 +303,14 @@
                           "enum": [
                             "env",
                             "file",
-                            "exec"
+                            "exec",
+                            "store"
                           ]
                         },
                         "provider": {
                           "type": "string",
-                          "minLength": 1
+                          "minLength": 1,
+                          "pattern": "^[a-z][a-z0-9_-]{0,63}$"
                         },
                         "id": {
                           "type": "string",
@@ -300,7 +322,25 @@
                         "provider",
                         "id"
                       ],
-                      "additionalProperties": false
+                      "additionalProperties": false,
+                      "allOf": [
+                        {
+                          "if": {
+                            "properties": {
+                              "source": {
+                                "const": "store"
+                              }
+                            }
+                          },
+                          "then": {
+                            "properties": {
+                              "id": {
+                                "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+                              }
+                            }
+                          }
+                        }
+                      ]
                     }
                   ]
                 },

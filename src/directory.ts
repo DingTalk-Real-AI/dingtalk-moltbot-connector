@@ -1,4 +1,4 @@
-import type { ClawdbotConfig } from "openclaw/plugin-sdk";
+import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
 import { resolveDingtalkAccount } from "./config/accounts.ts";
 import { normalizeDingtalkTarget } from "./targets.ts";
 
