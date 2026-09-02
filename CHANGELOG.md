@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.26-beta.0] - 2026-09-02
+
+> **社区验证版本** — 完成钉钉 Connector 对 OpenClaw 2.0 稳定版运行时的 SDK、密钥契约、Host 队列/中断与 Agent 路由适配。该版本发布到 npm `beta` 标签，不会替换稳定用户使用的 `latest`（`0.8.25`）。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.26-beta.0.md)。
+> **Community validation release** — adapts the DingTalk Connector to the stable OpenClaw 2.0 runtime, including the SDK, secret contract, host-owned queue/interrupt semantics, and agent routing. It is published under npm's `beta` tag and does not replace the stable `latest` (`0.8.25`).
+
 ### 变更 / Changed
 
 - 🔄 **OpenClaw 2 运行时适配 ([#656](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/656))** — 迁移到当前 Plugin SDK、Host 配置快照、缓冲回复调度器和 Channel Secret Contract；最低宿主版本为 OpenClaw `2026.8.1`。
@@ -18,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ⏸️ **消息中断与并发队列 ([#653](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/653))** — 将会话队列和 interrupt 语义交给 OpenClaw Host，避免暂停/中断消息被 Connector 队列阻塞；并发回调期间持续保持连接心跳。
   **Interrupt and concurrent queue ownership** — delegates session queue and interrupt semantics to the OpenClaw host so pause/interrupt messages are not blocked by a connector queue, while keeping the connection heartbeat active until every concurrent callback settles.
+
+### 升级 / Upgrade
+
+```bash
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.26-beta.0
+openclaw gateway restart
+```
 
 ## [0.8.25] - 2026-08-20
 
