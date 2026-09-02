@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 🔄 **OpenClaw 2 运行时适配 ([#656](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/656))** — 迁移到当前 Plugin SDK、Host 配置快照、缓冲回复调度器和 Channel Secret Contract；最低宿主版本为 OpenClaw `2026.8.1`。
   **OpenClaw 2 runtime migration** — moves to the current Plugin SDK, host config snapshots, buffered reply dispatch, and the channel secret contract; the minimum host version is OpenClaw `2026.8.1`.
+- 🧭 **Host Agent 路由 ([#657](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/657))** — 消息准入后只调用一次 OpenClaw `resolveAgentRoute`，并将确定的 Agent、工作空间和最终 SessionKey 贯穿到派发；显式多 Agent 配置不再错误回退到硬编码的 `main`。
+  **Host-owned agent routing** — resolves each admitted message once through OpenClaw `resolveAgentRoute` and carries the selected agent, workspace, and final SessionKey into dispatch; explicit multi-agent rosters no longer fall back incorrectly to a hard-coded `main` agent.
 
 ### 修复 / Fixed
 

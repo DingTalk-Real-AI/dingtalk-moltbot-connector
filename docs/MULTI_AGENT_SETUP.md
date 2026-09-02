@@ -6,7 +6,7 @@
 
 ### 前提条件
 
-- OpenClaw 已安装且正常运行（`openclaw -v` ≥ 2026.4.9）
+- OpenClaw 已安装且正常运行（本文配置示例使用 OpenClaw 2026.8.1 的 `agents.entries` 格式）
 - 已有一个可用的钉钉机器人（作为第一个 Agent）
 
 ### Step 1：在钉钉开放平台创建新机器人
@@ -15,14 +15,14 @@
 
 ### Step 2：创建 Agent 配置目录
 
-每个 Agent 需要一个独立的配置目录，里面放 `agent.md` 文件定义 Agent 的人格和能力。
+每个 Agent 使用独立的工作空间。将人格说明写入工作空间的 `SOUL.md`，操作说明写入 `AGENTS.md`。
 
 ```bash
 # 创建 Agent 目录
-mkdir -p ~/.openclaw/agents/dev-agent/agent
+mkdir -p ~/.openclaw/workspace-dev-agent
 
 # 写入 systemPrompt（这是 Agent 的"人格定义"）
-cat > ~/.openclaw/agents/dev-agent/agent/agent.md << 'EOF'
+cat > ~/.openclaw/workspace-dev-agent/SOUL.md << 'EOF'
 你是一个开发助手，擅长代码审查、技术方案设计和 Bug 排查。
 回复时请在第一行加上标识：🔵 [Dev Agent]
 EOF
@@ -34,18 +34,18 @@ EOF
 
 编辑 `~/.openclaw/openclaw.json`，需要修改三个部分：
 
-#### 3.1 注册 Agent（agents.list）
+#### 3.1 注册 Agent（agents.entries）
 
 ```jsonc
 "agents": {
-  "list": [
-    { "id": "main" },
-    {
-      "id": "dev-agent",
+  "ownership": "explicit",
+  "entries": {
+    "main": {},
+    "dev-agent": {
       "name": "开发助手",
-      "agentDir": "/Users/你的用户名/.openclaw/agents/dev-agent/agent"
+      "workspace": "/Users/你的用户名/.openclaw/workspace-dev-agent"
     }
-  ]
+  }
 }
 ```
 
@@ -85,6 +85,10 @@ EOF
 #### 3.3 绑定机器人到 Agent（bindings）
 
 通过 `accountId` 将每个机器人绑定到对应的 Agent：
+
+路由由 OpenClaw 的 `resolveAgentRoute` 决定。精确的群/用户绑定优先于账号级绑定，`accountId: "*"` 匹配所有账号，省略 `accountId` 只匹配默认账号。账号名称保留大小写；`default` 和 `__default__` 表示默认账号。显式多 Agent 配置必须为机器人提供绑定，插件不会回退到硬编码的 `main`。
+
+会话仍遵循插件的 `groupSessionScope`、`sharedMemoryAcrossConversations` 和 `session.dmScope` 设置；绑定匹配使用真实群/用户 ID，OpenClaw Host 按最终 SessionKey 管理队列与中断。
 
 ```jsonc
 "bindings": [
@@ -151,19 +155,18 @@ tail -f ~/.openclaw/logs/gateway.log | grep dingtalk
     "defaults": {
       "model": { "primary": "bailian/qwen3.5-plus" }
     },
-    "list": [
-      { "id": "main" },
-      {
-        "id": "dev-agent",
+    "ownership": "explicit",
+    "entries": {
+      "main": {},
+      "dev-agent": {
         "name": "开发助手",
-        "agentDir": "~/.openclaw/agents/dev-agent/agent"
+        "workspace": "~/.openclaw/workspace-dev-agent"
       },
-      {
-        "id": "pm-agent",
+      "pm-agent": {
         "name": "项目经理",
-        "agentDir": "~/.openclaw/agents/pm-agent/agent"
+        "workspace": "~/.openclaw/workspace-pm-agent"
       }
-    ]
+    }
   },
   "channels": {
     "dingtalk-connector": {

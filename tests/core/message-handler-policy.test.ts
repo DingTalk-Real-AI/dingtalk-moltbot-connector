@@ -1,16 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockSendProactive = vi.hoisted(() => vi.fn());
+const mockSendProactive = vi.hoisted(() => vi.fn(async () => undefined));
 const mockDispatchReply = vi.hoisted(() => vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })));
 
-vi.mock("../../src/utils/utils-legacy.ts", () => ({
+vi.mock("../../src/utils/utils-legacy.ts", async () => ({
+  ...(await import("../../src/utils/session.ts")),
   isMessageProcessed: vi.fn(() => false),
   markMessageProcessed: vi.fn(),
-  buildSessionContext: vi.fn(() => ({
-    sessionPeerId: "u1",
-    peerId: "u1",
-    chatType: "direct",
-  })),
   getAccessToken: vi.fn(async () => "tk"),
   getOapiAccessToken: vi.fn(async () => null),
   DINGTALK_API: "https://api.dingtalk.com",
@@ -44,21 +40,22 @@ vi.mock("../../src/reply-dispatcher.ts", () => ({
   normalizeSlashCommand: vi.fn((s: string) => s),
 }));
 
-vi.mock("../../src/runtime.ts", () => ({
-  getDingtalkRuntime: vi.fn(() => ({
-    agent: { resolveAgentWorkspaceDir: vi.fn(() => "/tmp/dingtalk-test-workspace") },
-    channel: {
-      reply: {
-        resolveEnvelopeFormatOptions: vi.fn(() => ({})),
-        formatAgentEnvelope: vi.fn(() => "body"),
-        dispatchReplyWithBufferedBlockDispatcher: mockDispatchReply,
+vi.mock("../../src/runtime.ts", async () => {
+  const routing = await import("openclaw/plugin-sdk/routing");
+  return {
+    getDingtalkRuntime: vi.fn(() => ({
+      agent: { resolveAgentWorkspaceDir: vi.fn(() => "/tmp/dingtalk-test-workspace") },
+      channel: {
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "body"),
+          dispatchReplyWithBufferedBlockDispatcher: mockDispatchReply,
+        },
+        routing,
       },
-      routing: {
-        buildAgentSessionKey: vi.fn(() => "session"),
-      },
-    },
-  })),
-}));
+    })),
+  };
+});
 
 describe("handleDingTalkMessage policy guards", () => {
   beforeEach(() => {
@@ -77,7 +74,7 @@ describe("handleDingTalkMessage policy guards", () => {
       sessionWebhook: "http://webhook",
       runtime: { log: vi.fn() } as any,
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      cfg: {} as any,
+      cfg: { agents: { entries: { main: {} } } },
     });
   }
 
@@ -97,14 +94,14 @@ describe("handleDingTalkMessage policy guards", () => {
         conversationType: "1", senderStaffId: "u1", conversationId: "cid1",
       },
     });
-    expect(mockDispatchReply).toHaveBeenCalledWith(expect.objectContaining({
+    await vi.waitFor(() => expect(mockDispatchReply).toHaveBeenCalledWith(expect.objectContaining({
       ctx: expect.objectContaining({
         BodyForAgent: expect.stringContaining("Current bot clientId: bot-for-this-turn"),
         rawText: "hello", CommandBody: "hello",
-        SessionKey: "session", AccountId: "acc-1", MessageSid: "message-1",
+        SessionKey: "agent:main:dingtalk-connector:direct:u1", AccountId: "acc-1", MessageSid: "message-1",
       }),
       dispatcherOptions: expect.any(Object),
-    }));
+    })));
   });
 
   it("blocks DM when allowlist empty", async () => {

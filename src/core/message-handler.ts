@@ -16,9 +16,7 @@
  * - 与 OpenClaw 框架集成（bindings、runtime）
  */
 // 类型定义
-interface ClawdbotConfig {
-  [key: string]: any;
-}
+type ClawdbotConfig = Parameters<ReturnType<typeof getDingtalkRuntime>["channel"]["routing"]["resolveAgentRoute"]>[0]["cfg"];
 
 interface RuntimeEnv {
   log?: (...args: any[]) => void;
@@ -44,6 +42,7 @@ import {
   addEmotionReply,
   recallEmotionReply,
 } from "../utils/utils-legacy.ts";
+import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../sdk/helpers.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -51,7 +50,6 @@ import {
   uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
-import type { AICardInstance } from "../services/messaging/card.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
 import {
@@ -938,20 +936,14 @@ interface HandleMessageParams {
   runtime?: RuntimeEnv;
   log?: any;
   cfg: ClawdbotConfig;
-  /** 队列繁忙时预先创建的 AI Card，处理时直接复用而非新建，实现"占位→更新"效果 */
-  preCreatedCard?: AICardInstance;
-  /** 队列繁忙时已在入队阶段提前贴上了思考中表情，内部处理时跳过重复贴表情 */
-  emotionAlreadyAdded?: boolean;
 }
 
 /**
  * 内部消息处理函数（实际执行消息处理逻辑）
  */
-export async function handleDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
-  const { accountId, config, data, sessionWebhook, runtime, cfg } = params;
-
+async function prepareDingTalkMessage(params: HandleMessageParams) {
+  const { accountId, config, data, cfg } = params;
   const log = createLoggerFromConfig(config, `DingTalk:${accountId}`);
-
   const content = extractMessageContent(data);
   if (!content.text && content.imageUrls.length === 0 && content.downloadCodes.length === 0) return;
 
@@ -1104,31 +1096,60 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     sharedMemoryAcrossConversations: config.sharedMemoryAcrossConversations,
   });
 
-  // ===== 解析 agentId 和工作空间路径（在 sessionContext 之后，确保 chatType 与会话隔离策略一致）=====
-  // 使用 sessionContext.peerId 进行匹配（真实的 conversationId/senderId，与 match.peer.id 语义一致）。
-  // 注意：不能使用 sessionContext.sessionPeerId，它受 sharedMemoryAcrossConversations 等配置影响，
-  // 可能被设为 accountId，导致不同群/用户的消息匹配到同一个 binding，路由错误。
-  let matchedAgentId: string | null = null;
-  if (cfg.bindings && cfg.bindings.length > 0) {
-    for (const binding of cfg.bindings) {
-      const match = binding.match;
-      if (match.channel && match.channel !== "dingtalk-connector") continue;
-      if (match.accountId && match.accountId !== accountId) continue;
-      if (match.peer) {
-        if (match.peer.kind && match.peer.kind !== sessionContext.chatType) continue;
-        if (match.peer.id && match.peer.id !== '*' && match.peer.id !== sessionContext.peerId) continue;
-      }
-      matchedAgentId = binding.agentId;
-      break;
-    }
-  }
-  if (!matchedAgentId) {
-    matchedAgentId = cfg.defaultAgent || 'main';
-  }
 
-  // 获取 Agent 工作空间路径
-  const agentWorkspaceDir = getDingtalkRuntime().agent.resolveAgentWorkspaceDir(cfg, matchedAgentId);
-  log?.info?.(`Agent 工作空间路径: ${agentWorkspaceDir}`);
+  try {
+    const core = getDingtalkRuntime();
+    // DingTalk account IDs are case-sensitive. Project only matching accounts
+    // into host routing; keep original IDs in sessions, delivery, and config.
+    const normalizedAccountId = normalizeAccountId(accountId);
+    const routingAccountId = normalizedAccountId === DEFAULT_ACCOUNT_ID ? "default" : "dingtalk-account";
+    const bindings = cfg.bindings?.flatMap((binding) => {
+      if (binding.match.channel.trim().toLowerCase() !== "dingtalk-connector") return [];
+      const selector = binding.match.accountId?.trim();
+      if (!selector || selector === "*") return [binding];
+      if (normalizeAccountId(selector) !== normalizedAccountId) return [];
+      return [{ ...binding, match: { ...binding.match, accountId: routingAccountId } }];
+    });
+    const route = core.channel.routing.resolveAgentRoute({
+      cfg: { ...cfg, bindings },
+      channel: "dingtalk-connector",
+      accountId: routingAccountId,
+      peer: { kind: sessionContext.chatType, id: sessionContext.peerId },
+    });
+    // Bind against the real peer, then retain the plugin's shipped memory scope.
+    // Queue and dispatch must share this exact key, including explicit dmScope.
+    const sessionKey = core.channel.routing.buildAgentSessionKey({
+      agentId: route.agentId,
+      channel: "dingtalk-connector",
+      accountId,
+      peer: { kind: sessionContext.chatType, id: sessionContext.sessionPeerId },
+      dmScope: cfg.session?.dmScope ?? "per-channel-peer",
+    });
+    const agentWorkspaceDir = core.agent.resolveAgentWorkspaceDir(cfg, route.agentId);
+    log?.info?.(`路由解析完成: agentId=${route.agentId}, sessionKey=${sessionKey}, matchedBy=${route.matchedBy}`);
+    return { content, sessionContext, agentId: route.agentId, sessionKey, agentWorkspaceDir };
+  } catch (error) {
+    log?.error?.(`Agent routing failed: ${String(error)}`);
+    await sendProactive(config,
+      isDirect ? { userId: senderId } : { openConversationId: data.conversationId },
+      '无法选择处理此消息的智能体，请管理员检查此机器人的 OpenClaw bindings 配置。',
+      { msgType: 'text', useAICard: false, fallbackToNormal: true, log },
+    ).catch((sendError) => log?.error?.(`Routing error notification failed: ${String(sendError)}`));
+  }
+}
+
+type PreparedMessage = NonNullable<Awaited<ReturnType<typeof prepareDingTalkMessage>>>;
+
+async function handleDingTalkMessageInternal(
+  params: HandleMessageParams,
+  prepared: PreparedMessage,
+): Promise<void> {
+  const { accountId, config, data, sessionWebhook, runtime, cfg } = params;
+  const { content, sessionContext, agentId: matchedAgentId, sessionKey, agentWorkspaceDir } = prepared;
+  const log = createLoggerFromConfig(config, `DingTalk:${accountId}`);
+  const isDirect = data.conversationType === '1';
+  const senderId = data.senderStaffId || data.senderId;
+  const senderName = data.senderNick || 'Unknown';
 
   // 构建消息内容
   // ✅ 使用 normalizeSlashCommand 归一化新会话命令
@@ -1327,12 +1348,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   if (!userContent && imageLocalPaths.length === 0) return;
 
   // ===== 贴处理中表情 =====
-  // 若队列繁忙时已在入队阶段提前贴过表情，此处跳过，避免重复贴
-  if (!params.emotionAlreadyAdded) {
-    addEmotionReply(config, data, log).catch(err => {
-      log?.warn?.(`贴表情失败: ${err.message}`);
-    });
-  }
+  addEmotionReply(config, data, log).catch(err => {
+    log?.warn?.(`贴表情失败: ${err.message}`);
+  });
 
   // ===== 异步模式：立即回执 + 后台执行 + 主动推送结果 =====
   const asyncMode = config.asyncMode === true;
@@ -1380,27 +1398,6 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       body: finalContent,
     });
 
-    // matchedAgentId 已在 sessionContext 构建之后通过 bindings 匹配确定，此处直接使用
-    const matchedBy = matchedAgentId !== (cfg.defaultAgent || 'main') ? 'binding' : 'default';
-    
-    // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
-    // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
-    // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
-    // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
-    const dmScope = cfg.session?.dmScope || 'per-channel-peer';
-    log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
-    const sessionKey = core.channel.routing.buildAgentSessionKey({
-      agentId: matchedAgentId,
-      channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
-      accountId: accountId,
-      peer: {
-        kind: sessionContext.chatType,       // ✅ 使用 sessionContext.chatType
-        id: sessionContext.sessionPeerId,    // ✅ 使用 sessionContext.sessionPeerId（包含会话隔离逻辑）
-      },
-      dmScope: dmScope,  // ✅ 传递 dmScope 参数，确保生成完整格式的 sessionKey
-    });
-    log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}, matchedBy=${matchedBy}`);
-    
     // 构建 inbound context，使用解析后的 sessionKey
     log?.info?.(`开始构建 inbound context...`);
     
@@ -1415,7 +1412,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       CommandBody: userContent,
       From: senderId,
       To: toField,  // ✅ 修复：单聊用 senderId，群聊用 conversationId
-      SessionKey: sessionKey,  // ✅ 使用手动匹配的 sessionKey
+      SessionKey: sessionKey,
       AccountId: accountId,
       ChatType: sessionContext.chatType,
       GroupSubject: isDirect ? undefined : data.conversationTitle,
@@ -1436,7 +1433,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     // 创建 reply dispatcher，使用解析后的 agentId
     const { dispatcherOptions, replyOptions, getAsyncModeResponse } = createDingtalkReplyDispatcher({
       cfg,
-      agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
+      agentId: matchedAgentId,
       runtime: runtime as RuntimeEnv,
       conversationId: data.conversationId,
       senderId,
@@ -1445,7 +1442,6 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       messageCreateTimeMs: Date.now(),
       sessionWebhook: data.sessionWebhook,
       asyncMode,
-      preCreatedCard: params.preCreatedCard,
     });
 
     // ===== 注入当前 bot 的 clientId（用于 dws CLI --client-id 参数） =====
@@ -1609,7 +1605,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
 
 /** Message entry point. OpenClaw owns per-session queue and interrupt semantics. */
 export async function handleDingTalkMessage(params: HandleMessageParams): Promise<void> {
-  await handleDingTalkMessageInternal(params);
+  const prepared = await prepareDingTalkMessage(params);
+  if (!prepared) return;
+  await handleDingTalkMessageInternal(params, prepared);
 }
 
 // handleDingTalkMessage 已在函数定义处直接导出
