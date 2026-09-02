@@ -15,6 +15,7 @@
 
 - 移除 Connector 自己的会话队列，由 OpenClaw Host 统一处理排队和 interrupt。
 - 暂停、中断等控制消息不再被 Connector 队列阻塞。
+- 显式使用 Host 注入的低层 Channel 派发入口，确保 active queue resolution 在稳定版运行时真正生效（[#660](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/660)）。
 - 并发消息处理期间保持 DingTalk Stream 连接生命周期。
 
 ### Host Agent 路由 ([#657](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/657))
@@ -30,7 +31,7 @@
 - 插件成功注册 DingTalk Channel 与 15 个 Gateway Methods，兼容性和诊断结果为空。
 - 路由、策略、连接专项测试 26/26 通过；全量测试 535 通过、11 跳过。
 - 5 个 `probe` 单测失败与合入前基线一致，本版本没有新增失败。
-- 使用测试组织凭据完成 access-token 探测、DingTalk Stream 启动及主动消息发送；发布前以新的钉钉回复完成入站与自动回复闭环验证。
+- 使用测试组织凭据完成 access-token 探测、DingTalk Stream 启动、主动消息发送，以及 `openclaw2-final-ping` → `openclaw2-final-pong` 的真实入站、Host Agent 派发和钉钉回包闭环验证。
 
 ## 安装与反馈 / Install and feedback
 
@@ -50,4 +51,5 @@ openclaw gateway restart
 - [PR #656](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/656)
 - [PR #653](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/653)
 - [PR #657](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/657)
+- [PR #660](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/660)
 - [完整变更日志 / Full changelog](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/main/CHANGELOG.md)
