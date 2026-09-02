@@ -1,8 +1,7 @@
 import { createRequire as nodeCreateRequire } from "node:module";
-import type {
-  ChannelPlugin,
-  ClawdbotConfig,
-} from "openclaw/plugin-sdk";
+import type { ChannelPlugin } from "openclaw/plugin-sdk/core";
+import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
+import { defineChannelSetupContract } from "openclaw/plugin-sdk/channel-setup";
 import {
   createDefaultChannelRuntimeState,
   DEFAULT_ACCOUNT_ID,
@@ -30,6 +29,7 @@ import { dingtalkOnboardingAdapter } from "./onboarding.ts";
 import { monitorDingtalkProvider } from "./core/provider.ts";
 import { sendTextToDingTalk, sendMediaToDingTalk } from "./services/messaging/index.ts";
 import type { ResolvedDingtalkAccount, DingtalkConfig } from "./types/index.ts";
+import { channelSecrets } from "./secret-contract.ts";
 
 /** Channel identifier used across the plugin. Single source of truth. */
 export const CHANNEL_ID = "dingtalk-connector" as const;
@@ -86,6 +86,7 @@ const meta = {
 
 export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
   id: CHANNEL_ID,
+  secrets: channelSecrets,
   meta: {
     ...meta,
   },
@@ -228,7 +229,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       ];
     },
   },
-  setup: {
+  setupContract: defineChannelSetupContract({ fields: {}, adapter: {
     resolveAccountId: () => DEFAULT_ACCOUNT_ID,
     applyAccountConfig: ({ cfg, accountId }) => {
       const isDefault = !accountId || accountId === DEFAULT_ACCOUNT_ID;
@@ -264,7 +265,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         },
       };
     },
-  },
+  } }),
   setupWizard: dingtalkOnboardingAdapter as any,
   messaging: {
     normalizeTarget: (raw) => normalizeDingtalkTarget(raw) ?? undefined,
@@ -341,10 +342,11 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         text,
         replyToId,
       });
+      if (!result.ok) throw new Error(result.error || "DingTalk text delivery failed");
       return {
         channel: CHANNEL_ID,
         messageId: result.processQueryKey ?? result.cardInstanceId ?? "unknown",
-        conversationId: to,
+        target: { kind: "conversation", id: to },
       };
     },
     sendMedia: async ({ cfg, to, text, mediaUrl, accountId, mediaLocalRoots, replyToId, threadId }) => {
@@ -392,11 +394,12 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         hasProcessQueryKey: !!result.processQueryKey,
         hasCardInstanceId: !!result.cardInstanceId,
       }));
+      if (!result.ok) throw new Error(result.error || "DingTalk media delivery failed");
       
       return {
         channel: CHANNEL_ID,
         messageId: result.processQueryKey ?? result.cardInstanceId ?? "unknown",
-        conversationId: to,
+        target: { kind: "conversation", id: to },
       };
     },
   },
@@ -536,7 +539,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
 /**
  * Synchronously initializes `dingtalkPlugin.configSchema` using `createRequire`.
  *
- * Static `import ... from "openclaw/plugin-sdk/core"` causes
+ * Static SDK imports caused
  * "Cannot find package 'openclaw'" when the plugin is installed to
  * `~/.openclaw/extensions/` (Issue #527) because the ESM loader resolves
  * bare specifiers at parse time before the gateway's jiti alias map is active.
@@ -548,6 +551,6 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
 export function initDingtalkPluginConfigSchema(): void {
   if (dingtalkPlugin.configSchema != null) return;
   const require_ = nodeCreateRequire(import.meta.url);
-  const { buildChannelConfigSchema } = require_("openclaw/plugin-sdk/core");
+  const { buildChannelConfigSchema } = require_("openclaw/plugin-sdk/channel-config-schema");
   (dingtalkPlugin as any).configSchema = buildChannelConfigSchema(DingtalkConfigBaseSchema);
 }

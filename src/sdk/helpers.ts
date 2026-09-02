@@ -5,6 +5,7 @@
  */
 
 import type { SecretInput, SecretInputRef } from "./types.ts";
+import { isValidSecretRef } from "openclaw/plugin-sdk/secret-input";
 
 // ============================================================================
 // 账号 ID 处理
@@ -39,18 +40,7 @@ export function normalizeAccountId(accountId: string): string {
  * 判断是否为 SecretInput 引用
  */
 export function isSecretInputRef(value: unknown): value is SecretInputRef {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const ref = value as SecretInputRef;
-  return (
-    typeof ref.source === "string" &&
-    ["env", "file", "exec"].includes(ref.source) &&
-    typeof ref.provider === "string" &&
-    ref.provider.length > 0 &&
-    typeof ref.id === "string" &&
-    ref.id.length > 0
-  );
+  return isValidSecretRef(value);
 }
 
 /**
@@ -117,7 +107,7 @@ export function hasConfiguredSecretInput(value: unknown): boolean {
     if (ref.source === "env") {
       return typeof process.env[ref.id] === "string" && process.env[ref.id]!.trim().length > 0;
     }
-    // file 和 exec 总是认为已配置（运行时会验证）
+    // file、exec 和 store 总是认为已配置（运行时会验证）
     return true;
   }
   
@@ -148,8 +138,8 @@ export function normalizeResolvedSecretInputString(params: {
     const ref = value as SecretInputRef;
     
     // 验证引用格式
-    if (!["env", "file", "exec"].includes(ref.source)) {
-      throw new Error(`${path}.source must be one of: env, file, exec`);
+    if (!["env", "file", "exec", "store"].includes(ref.source)) {
+      throw new Error(`${path}.source must be one of: env, file, exec, store`);
     }
     if (typeof ref.provider !== "string" || !ref.provider.trim()) {
       throw new Error(`${path}.provider must be a non-empty string`);
@@ -158,17 +148,7 @@ export function normalizeResolvedSecretInputString(params: {
       throw new Error(`${path}.id must be a non-empty string`);
     }
     
-    // 环境变量特殊处理
-    if (ref.source === "env") {
-      const envValue = process.env[ref.id];
-      if (!envValue || !envValue.trim()) {
-        throw new Error(`${path}: environment variable ${ref.id} is not set`);
-      }
-      return envValue.trim();
-    }
-    
-    // file 和 exec 返回引用字符串
-    return `<${ref.source}:${ref.provider}:${ref.id}>`;
+    throw new Error(`${path}: SecretRef must be resolved by OpenClaw before use`);
   }
   
   throw new Error(`${path} must be a string or SecretInput object`);

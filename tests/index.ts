@@ -5,7 +5,7 @@
  */
 
 import { vi } from 'vitest';
-import type { ClawdbotConfig } from 'openclaw/plugin-sdk';
+import type { OpenClawConfig as ClawdbotConfig } from 'openclaw/plugin-sdk/config-contracts';
 
 /**
  * Create a mock ClawdbotConfig with dingtalk-connector channel configured.

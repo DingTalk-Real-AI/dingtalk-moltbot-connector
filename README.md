@@ -67,9 +67,9 @@
 开始之前，请确保：
 
 - **OpenClaw**：已安装并正常运行。详情请访问 [OpenClaw 官网](https://openclaw.ai/)
-- **版本要求**：OpenClaw ≥ **2026.4.9**，通过 `openclaw -v` 查看
+- **版本要求**：OpenClaw ≥ **2026.8.1-beta.3**，通过 `openclaw -v` 查看。本版本使用新的插件 SDK 和运行时配置快照；旧版宿主请继续使用插件 0.8.25，升级宿主后再升级插件。
 
-> 如低于此版本，执行 `npm install -g openclaw` 升级。
+> 如低于此版本，执行 `npm install -g openclaw@2026.8.1-beta.3` 升级。
 
 ### 一键安装 + 扫码授权（推荐）
 

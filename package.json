@@ -99,7 +99,7 @@
     "mammoth": "^1.8.0"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.4.9"
+    "openclaw": ">=2026.8.1-beta.3"
   },
   "peerDependenciesMeta": {
     "openclaw": {
@@ -107,6 +107,9 @@
     }
   },
   "openclaw": {
+    "compat": {
+      "pluginApi": ">=2026.8.1-beta.3"
+    },
     "channels": [
       "dingtalk-connector"
     ],
@@ -130,7 +133,8 @@
     "install": {
       "npmSpec": "@dingtalk-real-ai/dingtalk-connector",
       "localPath": "extensions/dingtalk",
-      "defaultChoice": "npm"
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.8.1-beta.3"
     },
     "installDependencies": true
   },
@@ -138,7 +142,7 @@
     "@types/node": "^20.19.37",
     "@vitest/coverage-v8": "^2.0.0",
     "@vitest/ui": "^2.1.9",
-    "openclaw": "^2026.4.9",
+    "openclaw": "2026.8.1-beta.3",
     "tsdown": "^0.21.4",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"

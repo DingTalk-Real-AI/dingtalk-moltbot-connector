@@ -1,4 +1,5 @@
-import type { ClawdbotConfig, OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { resolveDingtalkAccount } from "../config/accounts.ts";
 import type { DingtalkConfig } from "../types/index.ts";
 import {
@@ -176,17 +177,6 @@ function rememberCard(card: AICardInstance, config: DingtalkConfig, log?: Logger
   return record;
 }
 
-async function loadRuntimeConfig(
-  api: OpenClawPluginApi,
-  cfg?: ClawdbotConfig,
-): Promise<ClawdbotConfig> {
-  if (cfg) return cfg;
-  const apiConfig = (api as OpenClawPluginApi & { config?: ClawdbotConfig }).config;
-  if (apiConfig) return apiConfig;
-  const { loadConfig } = await import("openclaw/plugin-sdk/config-runtime");
-  return loadConfig() as ClawdbotConfig;
-}
-
 function getCardRecord(cardInstanceId: string): CardRecord {
   const record = cards.get(cardInstanceId);
   if (!record) throw new PublicError(`Unknown cardInstanceId: ${cardInstanceId}`);
@@ -308,7 +298,7 @@ export function installDingtalkCardBridge(api: OpenClawPluginApi): void {
   const g = globalThis as any;
   g[DINGTALK_CARD_BRIDGE_SYMBOL] = {
     async create(params: CardCreateParams) {
-      const cfg = await loadRuntimeConfig(api, params?.cfg);
+      const cfg = params?.cfg ?? api.runtime.config.current() as ClawdbotConfig;
       const target = parseCardTarget(params?.target);
       if (!target) throw new PublicError("target is required (user:<userId>, group:<openConversationId>, or cid...)");
       return createCard({
@@ -336,8 +326,7 @@ export function registerDingtalkCardGatewayMethods(api: OpenClawPluginApi): void
 
   api.registerGatewayMethod("dingtalk-connector.card.create", async ({ params, respond }) => {
     try {
-      const { loadConfig } = await import("openclaw/plugin-sdk/config-runtime");
-      const cfg = loadConfig() as ClawdbotConfig;
+      const cfg = api.runtime.config.current() as ClawdbotConfig;
       const rawParams = asRecord(params);
       const target = parseCardTarget(rawParams.target);
       if (!target) {

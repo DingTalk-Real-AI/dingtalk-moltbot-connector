@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendProactive = vi.hoisted(() => vi.fn());
+const mockDispatchReply = vi.hoisted(() => vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })));
 
 vi.mock("../../src/utils/utils-legacy.ts", () => ({
   isMessageProcessed: vi.fn(() => false),
@@ -32,9 +33,8 @@ vi.mock("../../src/services/messaging/index.ts", () => ({
 
 vi.mock("../../src/reply-dispatcher.ts", () => ({
   createDingtalkReplyDispatcher: vi.fn(() => ({
-    dispatcher: {},
+    dispatcherOptions: {},
     replyOptions: {},
-    markDispatchIdle: vi.fn(),
     getAsyncModeResponse: vi.fn(() => ""),
   })),
   normalizeSlashCommand: vi.fn((s: string) => s),
@@ -42,13 +42,12 @@ vi.mock("../../src/reply-dispatcher.ts", () => ({
 
 vi.mock("../../src/runtime.ts", () => ({
   getDingtalkRuntime: vi.fn(() => ({
+    agent: { resolveAgentWorkspaceDir: vi.fn(() => "/tmp/dingtalk-test-workspace") },
     channel: {
       reply: {
         resolveEnvelopeFormatOptions: vi.fn(() => ({})),
         formatAgentEnvelope: vi.fn(() => "body"),
-        finalizeInboundContext: vi.fn(() => ({})),
-        withReplyDispatcher: vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })),
-        dispatchReplyFromConfig: vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })),
+        dispatchReplyWithBufferedBlockDispatcher: mockDispatchReply,
       },
       routing: {
         buildAgentSessionKey: vi.fn(() => "session"),
@@ -84,6 +83,24 @@ describe("handleDingTalkMessage policy guards", () => {
       data: { msgtype: "text", text: { content: "" }, conversationType: "1" },
     });
     expect(mockSendProactive).not.toHaveBeenCalled();
+  });
+
+  it("dispatches admitted text with the bot context added during ingress", async () => {
+    await callHandle({
+      config: { dmPolicy: "open", clientId: "bot-for-this-turn" },
+      data: {
+        msgId: "message-1", msgtype: "text", text: { content: "hello" },
+        conversationType: "1", senderStaffId: "u1", conversationId: "cid1",
+      },
+    });
+    expect(mockDispatchReply).toHaveBeenCalledWith(expect.objectContaining({
+      ctx: expect.objectContaining({
+        BodyForAgent: expect.stringContaining("Current bot clientId: bot-for-this-turn"),
+        rawText: "hello", CommandBody: "hello",
+        SessionKey: "session", AccountId: "acc-1", MessageSid: "message-1",
+      }),
+      dispatcherOptions: expect.any(Object),
+    }));
   });
 
   it("blocks DM when allowlist empty", async () => {

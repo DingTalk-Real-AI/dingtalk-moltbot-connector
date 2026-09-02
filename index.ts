@@ -14,7 +14,7 @@
  * 不会影响 OpenClaw Gateway 和其他插件的网络请求
  */
 
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { dingtalkPlugin, initDingtalkPluginConfigSchema } from "./src/channel.ts";
 import { setDingtalkRuntime } from "./src/runtime.ts";
 import { registerGatewayMethods } from "./src/gateway-methods.ts";
