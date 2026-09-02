@@ -51,8 +51,7 @@ import {
   uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
-import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
-import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
+import type { AICardInstance } from "../services/messaging/card.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
 import {
@@ -77,35 +76,6 @@ const AICardStatus = {
   EXECUTING: '4',
   FAILED: '5',
 } as const;
-
-// ============ 会话级别消息队列 ============
-
-/**
- * 会话消息队列管理
- * 用于确保同一会话+agent的消息按顺序处理，避免并发冲突导致AI返回空响应
- * 队列键格式：{sessionId}:{agentId}
- * 这样不同 agent 可以并发处理，同一 agent 的同一会话串行处理
- */
-const sessionQueues = new Map<string, Promise<void>>();
-
-/**
- * 清理过期的会话队列（超过5分钟没有新消息的会话+agent）
- */
-const sessionLastActivity = new Map<string, number>();
-const SESSION_QUEUE_TTL = 5 * 60 * 1000; // 5分钟
-
-function cleanupExpiredSessionQueues(): void {
-  const now = Date.now();
-  for (const [queueKey, lastActivity] of sessionLastActivity.entries()) {
-    if (now - lastActivity > SESSION_QUEUE_TTL) {
-      sessionQueues.delete(queueKey);
-      sessionLastActivity.delete(queueKey);
-    }
-  }
-}
-
-// 每分钟清理一次过期队列
-setInterval(cleanupExpiredSessionQueues, 60_000);
 
 // ============ 类型定义 ============
 
@@ -1506,7 +1476,12 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       ctx: { ...ctxPayload, BodyForAgent: finalContent },
       cfg,
       dispatcherOptions,
-      replyOptions,
+      // Queue ownership belongs to OpenClaw. In particular, interrupt mode must let a newer
+      // inbound reach core while the previous tool/model run is still active.
+      replyOptions: {
+        ...replyOptions,
+        allowActiveQueueResolution: true,
+      },
     });
 
     const { queuedFinal, counts } = dispatchResult;
@@ -1632,153 +1607,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   }
 }
 
-/**
- * 消息处理入口函数（带队列管理）
- * 确保同一会话+agent的消息按顺序处理，避免并发冲突
- */
+/** Message entry point. OpenClaw owns per-session queue and interrupt semantics. */
 export async function handleDingTalkMessage(params: HandleMessageParams): Promise<void> {
-  const { accountId, config, data, log, cfg } = params;
-
-  // 使用 buildSessionContext 构建会话标识，与 handleDingTalkMessageInternal 保持一致
-  // 确保 queueKey 的隔离策略（groupSessionScope、sharedMemoryAcrossConversations）与 sessionKey 一致
-  const isDirect = data.conversationType === '1';
-  const senderId = data.senderStaffId || data.senderId;
-  const conversationId = data.conversationId;
-
-  const queueSessionContext = buildSessionContext({
-    accountId,
-    senderId,
-    conversationType: data.conversationType,
-    conversationId,
-    separateSessionByConversation: config.separateSessionByConversation,
-    groupSessionScope: config.groupSessionScope,
-    sharedMemoryAcrossConversations: config.sharedMemoryAcrossConversations,
-  });
-
-  const baseSessionId = queueSessionContext.sessionPeerId;
-
-  if (!baseSessionId) {
-    log?.warn?.('无法构建会话标识，跳过队列管理');
-    return handleDingTalkMessageInternal(params);
-  }
-
-  // 解析 agentId：使用 queueSessionContext.peerId（真实 peer 标识）进行匹配
-  // 与 handleDingTalkMessageInternal 中的匹配逻辑保持一致。
-  // 必须使用 peerId 而非 sessionPeerId，原因：sharedMemoryAcrossConversations=true 时
-  // sessionPeerId 被设为 accountId，导致不同群的消息匹配到同一个 binding。
-  let matchedAgentId: string | null = null;
-  if (cfg.bindings && cfg.bindings.length > 0) {
-    for (const binding of cfg.bindings) {
-      const match = binding.match;
-      if (match.channel && match.channel !== "dingtalk-connector") continue;
-      if (match.accountId && match.accountId !== accountId) continue;
-      if (match.peer) {
-        if (match.peer.kind && match.peer.kind !== queueSessionContext.chatType) continue;
-        if (match.peer.id && match.peer.id !== '*' && match.peer.id !== queueSessionContext.peerId) continue;
-      }
-      matchedAgentId = binding.agentId;
-      break;
-    }
-  }
-  if (!matchedAgentId) {
-    matchedAgentId = cfg.defaultAgent || 'main';
-  }
-
-  // 构建队列标识：会话 peerId + agentId
-  // queueKey 与 sessionKey 使用相同的 peerId，确保隔离策略一致：
-  // - groupSessionScope: 'group_sender' 时，同群不同用户的消息可并行处理
-  // - sharedMemoryAcrossConversations: true 时，所有消息共享同一队列
-  const queueKey = `${baseSessionId}:${matchedAgentId}`;
-
-  try {
-
-    // 更新会话活跃时间
-    sessionLastActivity.set(queueKey, Date.now());
-
-    // 检测队列是否繁忙（入队前检查，此时 previousTask 尚未被当前消息覆盖）
-    const isQueueBusy = sessionQueues.has(queueKey);
-
-    // 获取该会话+agent的上一个处理任务
-    const previousTask = sessionQueues.get(queueKey) || Promise.resolve();
-
-    // 队列繁忙时：根据 groupReplyMode 决定是创建 AI Card 还是发送普通文本 ACK
-    let preCreatedCard: AICardInstance | undefined;
-    if (isQueueBusy) {
-      const ackPhrases = QUEUE_BUSY_ACK_PHRASES;
-      const ackText = ackPhrases[Math.floor(Math.random() * ackPhrases.length)];
-
-      // ✅ 检查 groupReplyMode：text/markdown 模式下不创建 AI Card，改用普通消息发送 ACK
-      const groupReplyMode = config.groupReplyMode || 'aicard';
-      const skipAICard = !isDirect && (groupReplyMode === 'text' || groupReplyMode === 'markdown');
-
-      if (skipAICard) {
-        // text/markdown 模式：使用普通消息发送 ACK，不创建 AI Card
-        try {
-          await sendProactive(config, { openConversationId: data.conversationId }, ackText, {
-            msgType: 'text',
-            useAICard: false,
-            fallbackToNormal: true,
-          });
-          log?.info?.(`[队列] 队列繁忙，已发送普通文本 ACK（groupReplyMode=${groupReplyMode}）`);
-        } catch (ackErr: any) {
-          log?.warn?.(`[队列] 发送普通 ACK 失败: ${ackErr?.message || ackErr}`);
-        }
-        // text/markdown 模式不贴🤔表情（表情是 AI Card 场景的配套功能）
-      } else {
-        // aicard 模式：创建 AI Card 显示排队 ACK
-        const cardTarget: AICardTarget = isDirect
-          ? { type: 'user', userId: senderId }
-          : { type: 'group', openConversationId: data.conversationId };
-
-        try {
-          const card = await createAICardForTarget(config, cardTarget, log);
-          if (card) {
-            // 用 streamAICard 把 ACK 文案写入 Card（INPUTING 状态，表示正在处理中）
-            await streamAICard(card, ackText, false, config, log);
-            preCreatedCard = card;
-            log?.info?.(`[队列] 队列繁忙，已创建排队 ACK Card，cardInstanceId=${card.cardInstanceId}`);
-          } else {
-            log?.warn?.(`[队列] 创建排队 ACK Card 失败（返回 null），跳过 ACK`);
-          }
-          // 在发送 ACK 的同时立即贴上思考中表情，让用户知道消息已被接收
-          addEmotionReply(config, data, log).catch(err => {
-            log?.warn?.(`[队列] 贴排队表情失败: ${err.message}`);
-          });
-        } catch (ackErr: any) {
-          log?.warn?.(`[队列] 创建排队 ACK Card 异常: ${ackErr?.message || ackErr}`);
-        }
-      }
-    }
-
-    // 创建当前消息的处理任务
-    const currentTask = previousTask
-      .then(async () => {
-        log?.info?.(`[队列] 开始处理消息，queueKey=${queueKey}`);
-        await handleDingTalkMessageInternal({ ...params, preCreatedCard, emotionAlreadyAdded: isQueueBusy });
-        log?.info?.(`[队列] 消息处理完成，queueKey=${queueKey}`);
-      })
-      .catch((err: any) => {
-        log?.error?.(`[队列] 消息处理异常，queueKey=${queueKey}, error=${err.message}`);
-        // 不抛出错误，避免阻塞后续消息
-      })
-      .finally(() => {
-        // 如果当前任务是队列中的最后一个任务，清理队列
-        if (sessionQueues.get(queueKey) === currentTask) {
-          sessionQueues.delete(queueKey);
-          log?.info?.(`[队列] 队列已清空，queueKey=${queueKey}`);
-        }
-      });
-    
-    // 更新队列
-    sessionQueues.set(queueKey, currentTask);
-
-    // 不等待任务完成，立即返回，不阻塞 WebSocket 消息接收
-    // 消息处理在后台异步执行，队列保证同一会话+agent的消息串行处理
-  } catch (err: any) {
-    log?.error?.(`[队列] 队列管理异常，直接处理: ${err.message}`);
-    // 如果队列管理失败，直接调用内部处理函数（不阻塞）
-    void handleDingTalkMessageInternal(params);
-  }
+  await handleDingTalkMessageInternal(params);
 }
 
 // handleDingTalkMessage 已在函数定义处直接导出
