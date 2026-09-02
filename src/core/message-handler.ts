@@ -1472,12 +1472,10 @@ async function handleDingTalkMessageInternal(
       ctx: { ...ctxPayload, BodyForAgent: finalContent },
       cfg,
       dispatcherOptions,
-      // Queue ownership belongs to OpenClaw. In particular, interrupt mode must let a newer
-      // inbound reach core while the previous tool/model run is still active.
-      replyOptions: {
-        ...replyOptions,
-        allowActiveQueueResolution: true,
-      },
+      // 使用 Host 注入的低层 Channel 派发入口。该入口在 OpenClaw 2026.8.1
+      // 会启用 active queue resolution，使 interrupt 能越过仍在执行的旧回合。
+      dispatchReplyFromConfig: core.channel.reply.dispatchReplyFromConfig,
+      replyOptions,
     });
 
     const { queuedFinal, counts } = dispatchResult;

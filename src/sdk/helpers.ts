@@ -5,7 +5,7 @@
  */
 
 import type { SecretInput, SecretInputRef } from "./types.ts";
-import { isValidSecretRef } from "openclaw/plugin-sdk/secret-input";
+import { isSecretRef, isValidSecretRef } from "openclaw/plugin-sdk/secret-input";
 
 // ============================================================================
 // 账号 ID 处理
@@ -40,7 +40,7 @@ export function normalizeAccountId(accountId: string): string {
  * 判断是否为 SecretInput 引用
  */
 export function isSecretInputRef(value: unknown): value is SecretInputRef {
-  return isValidSecretRef(value);
+  return isSecretRef(value) && isValidSecretRef(value);
 }
 
 /**
