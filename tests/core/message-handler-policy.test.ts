@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendProactive = vi.hoisted(() => vi.fn(async () => undefined));
 const mockDispatchReply = vi.hoisted(() => vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })));
+const mockLowLevelDispatch = vi.hoisted(() => vi.fn());
 
 vi.mock("../../src/utils/utils-legacy.ts", async () => ({
   ...(await import("../../src/utils/session.ts")),
@@ -50,6 +51,7 @@ vi.mock("../../src/runtime.ts", async () => {
           resolveEnvelopeFormatOptions: vi.fn(() => ({})),
           formatAgentEnvelope: vi.fn(() => "body"),
           dispatchReplyWithBufferedBlockDispatcher: mockDispatchReply,
+          dispatchReplyFromConfig: mockLowLevelDispatch,
         },
         routing,
       },
@@ -200,7 +202,7 @@ describe("handleDingTalkMessage policy guards", () => {
       await vi.waitFor(() => expect(mockDispatchReply).toHaveBeenCalledTimes(2));
       expect(
         mockDispatchReply.mock.calls.every(
-          ([request]) => request.replyOptions.allowActiveQueueResolution === true,
+          ([request]) => request.dispatchReplyFromConfig === mockLowLevelDispatch,
         ),
       ).toBe(true);
     } finally {
