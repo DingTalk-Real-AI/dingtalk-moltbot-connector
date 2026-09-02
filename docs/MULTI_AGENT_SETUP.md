@@ -6,7 +6,7 @@
 
 ### 前提条件
 
-- OpenClaw 已安装且正常运行（本文配置示例使用 OpenClaw 2026.8.1-beta.3 的 `agents.entries` 格式）
+- OpenClaw 已安装且正常运行（本文配置示例使用 OpenClaw 2026.8.1 的 `agents.entries` 格式）
 - 已有一个可用的钉钉机器人（作为第一个 Agent）
 
 ### Step 1：在钉钉开放平台创建新机器人
@@ -88,7 +88,7 @@ EOF
 
 路由由 OpenClaw 的 `resolveAgentRoute` 决定。精确的群/用户绑定优先于账号级绑定，`accountId: "*"` 匹配所有账号，省略 `accountId` 只匹配默认账号。账号名称保留大小写；`default` 和 `__default__` 表示默认账号。显式多 Agent 配置必须为机器人提供绑定，插件不会回退到硬编码的 `main`。
 
-会话仍遵循插件的 `groupSessionScope`、`sharedMemoryAcrossConversations` 和 `session.dmScope` 设置；绑定匹配使用真实群/用户 ID，队列按最终 SessionKey 串行处理。
+会话仍遵循插件的 `groupSessionScope`、`sharedMemoryAcrossConversations` 和 `session.dmScope` 设置；绑定匹配使用真实群/用户 ID，OpenClaw Host 按最终 SessionKey 管理队列与中断。
 
 ```jsonc
 "bindings": [

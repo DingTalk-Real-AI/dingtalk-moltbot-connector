@@ -26,6 +26,16 @@ describe("secret-input", () => {
     });
   });
 
+  it("accepts a valid store ref and rejects invalid store grammar", () => {
+    const schema = buildSecretInputSchema();
+    expect(
+      schema.parse({ source: "store", provider: "default", id: "DINGTALK_SECRET" }),
+    ).toEqual({ source: "store", provider: "default", id: "DINGTALK_SECRET" });
+    expect(() =>
+      schema.parse({ source: "store", provider: "Default", id: "ding-secret" }),
+    ).toThrow();
+  });
+
   it("rejects invalid structured secret object", () => {
     const schema = buildSecretInputSchema();
     expect(() =>

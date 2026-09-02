@@ -78,7 +78,7 @@ function deferred() {
 }
 async function processed(count: number) {
   await vi.waitFor(() => expect(state.recall).toHaveBeenCalledTimes(count));
-  await vi.waitFor(() => expect(state.log.info.mock.calls.filter(([s]) => String(s).includes('消息处理完成')).length).toBe(count));
+  await vi.waitFor(() => expect(state.dispatch).toHaveBeenCalledTimes(count));
 }
 
 beforeEach(() => {
@@ -158,25 +158,28 @@ describe("DingTalk host-owned routing", () => {
     ]);
   });
 
-  it("reserves the queue before a busy ACK yields and retains the admitted route", async () => {
+  it("dispatches concurrent arrivals through the host without a connector ACK queue", async () => {
     const first = deferred();
-    const ack = deferred();
     state.dispatch.mockImplementationOnce(async () => {
       await first.promise;
       return { queuedFinal: false, counts: { final: 0 } };
     });
     const base = message();
-    await handleDingTalkMessage(base);
+    const firstCall = handleDingTalkMessage(base);
     await vi.waitFor(() => expect(state.dispatch).toHaveBeenCalledTimes(1));
-    state.send.mockImplementationOnce(() => ack.promise);
-    await handleDingTalkMessage({ ...base, data: { ...base.data, text: { content: "second" } } });
-    await handleDingTalkMessage({ ...base, data: { ...base.data, text: { content: "third" } } });
-    await vi.waitFor(() => expect(state.send).toHaveBeenCalledTimes(2));
+    const secondCall = handleDingTalkMessage({
+      ...base,
+      data: { ...base.data, text: { content: "second" } },
+    });
+    const thirdCall = handleDingTalkMessage({
+      ...base,
+      data: { ...base.data, text: { content: "third" } },
+    });
+    await vi.waitFor(() => expect(state.dispatch).toHaveBeenCalledTimes(3));
+    expect(state.send).not.toHaveBeenCalled();
     base.cfg.bindings = [binding("other", "TeamBot")];
     first.resolve();
-    await processed(1);
-    expect(state.dispatch).toHaveBeenCalledTimes(1);
-    ack.resolve();
+    await Promise.all([firstCall, secondCall, thirdCall]);
     await processed(3);
     expect(state.dispatch.mock.calls.map(([{ ctx }]) => [ctx.CommandBody, ctx.SessionKey])).toEqual([
       ["hello", "agent:support:dingtalk-connector:group:group-1"],

@@ -67,9 +67,9 @@ We recommend using the DingTalk bot connected to OpenClaw as a **personal conver
 Before you start, make sure you have:
 
 - **OpenClaw**: Installed and running properly. Visit the [OpenClaw website](https://openclaw.ai/) for details.
-- **Version**: OpenClaw ≥ **2026.8.1-beta.3**. Check with `openclaw -v`. This version uses the current plugin SDK and runtime config snapshot API. On older hosts, keep connector 0.8.25 until you upgrade OpenClaw.
+- **Version**: OpenClaw ≥ **2026.8.1**. Check with `openclaw -v`. This version uses the current plugin SDK, runtime config snapshots, and host-owned queue/interrupt semantics. On older hosts, keep connector 0.8.25 until you upgrade OpenClaw.
 
-> If below this version, upgrade with: `npm install -g openclaw@2026.8.1-beta.3`
+> If below this version, upgrade with: `npm install -g openclaw@2026.8.1`
 
 ### One-Click Install + QR Auth (Recommended)
 

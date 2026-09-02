@@ -43,17 +43,17 @@ vi.mock("../../src/reply-dispatcher.ts", () => ({
 vi.mock("../../src/runtime.ts", async () => {
   const routing = await import("openclaw/plugin-sdk/routing");
   return {
-  getDingtalkRuntime: vi.fn(() => ({
-    agent: { resolveAgentWorkspaceDir: vi.fn(() => "/tmp/dingtalk-test-workspace") },
-    channel: {
-      reply: {
-        resolveEnvelopeFormatOptions: vi.fn(() => ({})),
-        formatAgentEnvelope: vi.fn(() => "body"),
-        dispatchReplyWithBufferedBlockDispatcher: mockDispatchReply,
+    getDingtalkRuntime: vi.fn(() => ({
+      agent: { resolveAgentWorkspaceDir: vi.fn(() => "/tmp/dingtalk-test-workspace") },
+      channel: {
+        reply: {
+          resolveEnvelopeFormatOptions: vi.fn(() => ({})),
+          formatAgentEnvelope: vi.fn(() => "body"),
+          dispatchReplyWithBufferedBlockDispatcher: mockDispatchReply,
+        },
+        routing,
       },
-      routing,
-    },
-  })),
+    })),
   };
 });
 
@@ -170,5 +170,42 @@ describe("handleDingTalkMessage policy guards", () => {
       },
     });
     expect(mockSendProactive).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands concurrent messages to OpenClaw queue resolution without connector serialization", async () => {
+    let releaseFirst!: () => void;
+    const firstDispatch = new Promise<{ queuedFinal: false; counts: { final: 0 } }>((resolve) => {
+      releaseFirst = () => resolve({ queuedFinal: false, counts: { final: 0 } });
+    });
+    mockDispatchReply
+      .mockImplementationOnce(async () => await firstDispatch)
+      .mockResolvedValue({ queuedFinal: false, counts: { final: 0 } });
+
+    const data = {
+      msgtype: "text",
+      text: { content: "hi" },
+      conversationType: "1",
+      conversationId: "cid1",
+      senderStaffId: "u1",
+      msgId: "msg-1",
+    };
+    const first = callHandle({ config: { dmPolicy: "open" }, data });
+    await vi.waitFor(() => expect(mockDispatchReply).toHaveBeenCalledTimes(1));
+
+    const second = callHandle({
+      config: { dmPolicy: "open" },
+      data: { ...data, msgId: "msg-2", text: { content: "pause" } },
+    });
+    try {
+      await vi.waitFor(() => expect(mockDispatchReply).toHaveBeenCalledTimes(2));
+      expect(
+        mockDispatchReply.mock.calls.every(
+          ([request]) => request.replyOptions.allowActiveQueueResolution === true,
+        ),
+      ).toBe(true);
+    } finally {
+      releaseFirst();
+      await Promise.all([first, second]);
+    }
   });
 });
