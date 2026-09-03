@@ -45,6 +45,13 @@ describe('media helpers', () => {
       const result = await processLocalImages('', 'token', log);
       expect(result).toBe('');
     });
+
+    it('should keep the original markdown when image upload returns null', async () => {
+      const content = 'hello ![img](/tmp/dingtalk-connector-missing-image-for-test.png)';
+      const result = await processLocalImages(content, 'token', log);
+
+      expect(result).toBe(content);
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('文件不存在'));
+    });
   });
 });
-
