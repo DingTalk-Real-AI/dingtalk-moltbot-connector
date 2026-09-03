@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.26] - 2026-09-03
+
+> **OpenClaw 2 正式版** — 完成当前 Plugin SDK、SecretRef、Host 队列/中断、Agent 路由与 Windows 加载链路适配，并将 npm `latest` 从 `0.8.25` 升级到 `0.8.26`。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.26.md)。
+> **OpenClaw 2 GA release** — completes the current Plugin SDK, SecretRef, host queue/interrupt, agent routing, and Windows loader adaptations, advancing npm `latest` from `0.8.25` to `0.8.26`.
+
+### 变更 / Changed
+
+- 🔄 **OpenClaw 2 Plugin SDK 与密钥契约 ([#656](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/656))** — 迁移到公开的细分 SDK 入口、Host 配置快照、缓冲回复调度器和 Channel Secret Contract；最低宿主版本为 OpenClaw `2026.8.1`。
+- ⏸️ **Host 队列与 interrupt ([#653](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/653) / [#660](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/660))** — 将排队、中断和低层消息派发交给 OpenClaw Host，同时保持并发回调期间的 Stream 连接生命周期。
+- 🧭 **Host Agent 路由 ([#657](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/657))** — 统一使用 Host 路由器解析 Agent、workspace 与 SessionKey，保留钉钉账号和会话隔离语义。
+
+### 修复 / Fixed
+
+- 🪟 **Windows OpenClaw 2 加载与 Runtime 共享 ([#662](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/662) / [#664](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/664))** — 移除入口中的可执行 `import.meta`，并通过全局共享 Runtime Store 支持 Windows jiti 与 cache-busted 模块实例。
+- 🖼️ **图片上传失败判空 ([#630](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/630) / [#652](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/652))** — 上传返回空值时不再因解构 `mediaId` 抛出异常。
+
+### 升级 / Upgrade
+
+```bash
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.26 --force --accept-capabilities
+openclaw gateway restart
+```
+
 ## [0.8.26-beta.1] - 2026-09-03
 
 > **Windows 兼容性验证版本** — 修复 OpenClaw `2026.8.1` 在 Windows jiti 加载路径中的插件入口解析和跨模块 Runtime 共享问题。本版本发布到 npm `beta` 标签，不会替换稳定用户使用的 `latest`（`0.8.25`）。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.26-beta.1.md)。
