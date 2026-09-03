@@ -7,10 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.26-beta.1] - 2026-09-03
+
+> **Windows 兼容性验证版本** — 修复 OpenClaw `2026.8.1` 在 Windows jiti 加载路径中的插件入口解析和跨模块 Runtime 共享问题。本版本发布到 npm `beta` 标签，不会替换稳定用户使用的 `latest`（`0.8.25`）。详见 [Release Notes](docs/RELEASE_NOTES_V0.8.26-beta.1.md)。
+> **Windows compatibility validation release** — fixes plugin-entry parsing and cross-module runtime sharing on the Windows jiti loader path in OpenClaw `2026.8.1`. It is published under npm's `beta` tag and does not replace the stable `latest` (`0.8.25`).
+
 ### 修复 / Fixed
 
 - 🪟 **Windows OpenClaw 2 插件加载与 Runtime 共享 ([#662](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues/662))** — 插件入口改用 Host 注入的 `api.source` 记录重复加载来源，避免 Windows jiti CJS 转换路径解析 `import.meta` 失败；Runtime Store 改为以 `dingtalk-connector` 为键的全局共享槽，确保 cache-busted 模块实例读取到同一份 Host Runtime。真实 OpenClaw 路由回归同时确认：仅配置一个 Agent 时无需额外添加 binding。
   **Windows OpenClaw 2 plugin loading and shared runtime** — Uses the host-provided `api.source` for duplicate-load tracking so the Windows jiti CJS transform path never has to parse `import.meta`; switches the runtime store to a globally shared `dingtalk-connector` slot so cache-busted module instances read the same host runtime. A real OpenClaw routing regression test also confirms that a sole configured agent does not require an explicit binding.
+
+### 升级 / Upgrade
+
+```bash
+openclaw plugins install @dingtalk-real-ai/dingtalk-connector@0.8.26-beta.1 --force --accept-capabilities
+openclaw gateway restart
+```
 
 ## [0.8.26-beta.0] - 2026-09-02
 
