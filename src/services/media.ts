@@ -420,7 +420,7 @@ export async function processVideoMarkers(
 
       // 5. 发送视频消息
       if (useProactiveApi && target) {
-        await sendVideoProactive(config, target, videoMediaId, picMediaId, metadata, log);
+        await sendVideoProactive(config, target, videoMediaId, picMediaId, metadata, log, oapiToken || undefined);
       } else {
         await sendVideoMessage(config, sessionWebhook, fileName, videoUploadResult.downloadUrl, log, metadata);
       }
@@ -576,7 +576,7 @@ export async function processAudioMarkers(
 
       // 发送音频消息
       if (useProactiveApi && target) {
-        await sendAudioProactive(config, target, fileName, uploadResult.downloadUrl, log, audioDurationMs ?? undefined);
+        await sendAudioProactive(config, target, fileName, uploadResult.downloadUrl, log, audioDurationMs ?? undefined, oapiToken || undefined);
       } else {
         await sendAudioMessage(config, sessionWebhook, fileName, uploadResult.downloadUrl, log, audioDurationMs ?? undefined);
       }
@@ -679,7 +679,7 @@ export async function processFileMarkers(
 
       // 发送文件消息（钉钉 API 统一要求带 @ 前缀的 mediaId）
       if (useProactiveApi && target) {
-        await sendFileProactive(config, target, fileInfo, uploadResult.mediaId, log);
+        await sendFileProactive(config, target, fileInfo, uploadResult.mediaId, log, oapiToken || undefined);
       } else {
         await sendFileMessage(config, sessionWebhook, fileInfo, uploadResult.mediaId, log);
       }
@@ -762,9 +762,10 @@ export async function sendVideoProactive(
   picMediaId: string,
   metadata?: { duration: number; width: number; height: number },
   log?: any,
+  oapiToken?: string,
 ): Promise<void> {
   try {
-    const token = await (await import('../utils/index.ts')).getAccessToken(config);
+    const token = oapiToken || await (await import('../utils/index.ts')).getAccessToken(config);
     const { DINGTALK_API } = await import('../utils/index.ts');
 
     // 钉钉普通消息 API 的视频消息格式
@@ -865,9 +866,10 @@ export async function sendAudioProactive(
   mediaId: string,
   log?: any,
   durationMs?: number,
+  oapiToken?: string,
 ): Promise<void> {
   try {
-    const token = await (await import('../utils/index.ts')).getAccessToken(config);
+    const token = oapiToken || await (await import('../utils/index.ts')).getAccessToken(config);
     const { DINGTALK_API } = await import('../utils/index.ts');
 
     // 钉钉普通消息 API 的音频消息格式
@@ -960,9 +962,10 @@ export async function sendFileProactive(
   fileInfo: FileInfo,
   mediaId: string,
   log?: any,
+  oapiToken?: string,
 ): Promise<void> {
   try {
-    const token = await (await import('../utils/index.ts')).getAccessToken(config);
+    const token = oapiToken || await (await import('../utils/index.ts')).getAccessToken(config);
     const { DINGTALK_API } = await import('../utils/index.ts');
 
     // 钉钉普通消息 API 的文件消息格式
@@ -1097,16 +1100,16 @@ export async function processRawMediaPaths(
         
         if (target) {
           // 视频消息需要原始 mediaId（带 @）
-          await sendVideoProactive(config, target, uploadResult.mediaId, fileName, log, metadata);
+          await sendVideoProactive(config, target, uploadResult.mediaId, fileName, log, metadata, oapiToken);
         }
         statusMessages.push(`✅ 视频已发送: ${fileName}`);
       } else if (mediaType === 'voice') {
         // 提取音频时长
         const durationMs = await extractAudioDuration(filePath, log);
-        
+
         if (target) {
           // 音频消息使用下载链接
-          await sendAudioProactive(config, target, fileName, uploadResult.downloadUrl, log, durationMs ?? undefined);
+          await sendAudioProactive(config, target, fileName, uploadResult.downloadUrl, log, durationMs ?? undefined, oapiToken);
         }
         statusMessages.push(`✅ 音频已发送: ${fileName}`);
       } else {
@@ -1116,9 +1119,9 @@ export async function processRawMediaPaths(
           fileName: fileName,
           fileType: ext,
         };
-        
+
         if (target) {
-          await sendFileProactive(config, target, fileInfo, uploadResult.mediaId, log);
+          await sendFileProactive(config, target, fileInfo, uploadResult.mediaId, log, oapiToken);
         }
         statusMessages.push(`✅ 文件已发送: ${fileName}`);
       }

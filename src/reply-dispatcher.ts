@@ -794,6 +794,17 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         if (info?.kind === "final") {
           log.info(`[DingTalk][deliver] 降级到非流式发送，文本长度=${text.length}, isTextMode=${isTextMode}, groupReplyMode=${groupReplyMode}`);
           try {
+            // 处理文件/视频/音频标记：上传媒体并通过 proactive API 发送
+            const oapiToken = await getOapiAccessToken(account.config as DingtalkConfig);
+            if (oapiToken) {
+              const fallbackTarget: AICardTarget = isDirect
+                ? { type: 'user', userId: senderId }
+                : { type: 'group', openConversationId: conversationId };
+              text = await processVideoMarkers(text, '', account.config as DingtalkConfig, oapiToken, log, true, fallbackTarget);
+              text = await processAudioMarkers(text, '', account.config as DingtalkConfig, oapiToken, log, true, fallbackTarget);
+              text = await processFileMarkers(text, '', account.config as DingtalkConfig, oapiToken, log, true, fallbackTarget);
+            }
+
             for (const chunk of core.channel.text.chunkTextWithMode(
               text,
               textChunkLimit,
