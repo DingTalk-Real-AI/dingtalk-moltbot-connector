@@ -136,7 +136,14 @@
       "defaultChoice": "npm",
       "minHostVersion": ">=2026.8.1"
     },
-    "installDependencies": true
+    "installDependencies": true,
+    "compat": {
+      "pluginApi": ">=2026.4.9",
+      "minGatewayVersion": ">=2026.4.9"
+    },
+    "build": {
+      "openclawVersion": "2026.4.9"
+    }
   },
   "devDependencies": {
     "@types/node": "^20.19.37",
