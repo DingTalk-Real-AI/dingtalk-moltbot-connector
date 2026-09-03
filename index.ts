@@ -32,7 +32,7 @@ export { registerGatewayMethods } from "./src/gateway-methods.ts";
  * 表现就是"消息时而能收到，时而收不到 / 回复丢失"。
  *
  * 这里做一个轻量自检：
- * - 把当前 index.mjs 的绝对路径写入全局 Symbol 表
+ * - 把 OpenClaw 注入的当前插件入口路径写入全局 Symbol 表
  * - 同名 plugin id 被第二次注册时打印警告（或在 `DINGTALK_STRICT_DUPLICATE_LOAD=1` 时直接抛错）
  *
  * 作为运行时兜底，建议同时在 `openclaw.json` 只保留一条加载路径。
@@ -46,8 +46,8 @@ function recordAndCheckLoadPath(api: OpenClawPluginApi): void {
     g[DUPLICATE_LOAD_SYMBOL] = store;
 
     const pluginId = "dingtalk-connector";
-    // import.meta.url 在 ESM 下指向当前 index.mjs 路径，正好是我们要比较的维度
-    const here = typeof import.meta !== "undefined" && import.meta?.url ? String(import.meta.url) : "<unknown>";
+    // 使用 Host 注入的入口来源，避免 import.meta 在 Windows jiti CJS 转换路径下触发语法错误。
+    const here = api.source?.trim() || api.rootDir?.trim() || "<unknown>";
     const paths = store.get(pluginId) ?? new Set<string>();
     paths.add(here);
     store.set(pluginId, paths);
