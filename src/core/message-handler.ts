@@ -692,6 +692,15 @@ export async function downloadMediaByCode(
   }
 }
 
+// 根据下载文件的实际扩展名推导 MIME（downloadImageToFile 只产出 jpg/png/gif/webp）
+function imageMimeFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/jpeg';
+}
+
 export async function getFileDownloadUrl(
   downloadCode: string,
   fileName: string,
@@ -1428,6 +1437,15 @@ async function handleDingTalkMessageInternal(
       // 当前机器人的加密身份（用于多机器人协作时让上层 Agent 引用 / 互相 @）
       BotChatbotUserId: data.chatbotUserId,
       BotChatbotCorpId: data.chatbotCorpId,
+      // 注入入站图片附件（Fixes #631）：OpenClaw 从 MediaPaths/MediaUrls/MediaTypes
+      // 读取媒体附件，只在 BodyForAgent 里嵌 ![image](file://...) markdown 时
+      // 视觉模型收不到图片数据。SDK resolveMediaFacts 对这三个字段做 Array.isArray
+      // 校验，只接受并行数组，换行拼接的字符串会被静默忽略。
+      ...(imageLocalPaths.length > 0 ? {
+        MediaPaths: imageLocalPaths,
+        MediaUrls: imageLocalPaths,
+        MediaTypes: imageLocalPaths.map(imageMimeFromPath),
+      } : {}),
     };
 
     // 创建 reply dispatcher，使用解析后的 agentId
