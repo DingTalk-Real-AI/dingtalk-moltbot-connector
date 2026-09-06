@@ -20,125 +20,44 @@ import { getAllAchievements } from './achievement-engine.ts';
 
 /**
  * 渲染普通掉落结果（追加到 agent 回复末尾）
+ *
+ * v3: 紧凑化渲染 — 用妖怪 emoji 图标 + 单行/双行展示，大幅减少纵向空间
  */
 export function renderDropResult(drop: DropResult, expResult: ExpResult, collection: UserCollection): string {
-  // v2: 空掉落（五行山镇压等事件导致无掉落）
   if (!drop.monster.id) {
     return '';
   }
 
-  const qualityLabel = drop.isShiny ? '✨ 闪光' : QUALITY_LABELS[drop.monster.quality];
+  const qualityLabel = drop.isShiny ? '✨' : QUALITY_LABELS[drop.monster.quality];
+  const monsterEmoji = drop.monster.emoji ?? '🗡️';
   const totalMonsters = getTotalMonsterCount();
   const collectedCount = collection.entries.length;
+  const tags: string[] = [];
+  if (drop.isPityTriggered) tags.push('🔮保底');
+  if (drop.isUpMonster) tags.push('📢UP');
+  if (drop.isNew) tags.push('📖新发现');
+  const tagStr = tags.length > 0 ? ` ${tags.join(' ')}` : '';
 
-  // v2: 逃跑展示
   if (drop.escaped) {
-    const escapeLines = [
-      '',
-      '---',
-      `💨 ${qualityLabel} **${drop.monster.name}** 挣脱束缚，遁入云中！`,
-      `> "${drop.monster.captureQuote}"`,
-      `修行值 +2（安慰奖）`,
-    ];
-    if (drop.escapeModifiers.length > 0) {
-      const modDesc = drop.escapeModifiers.map(m => `${m.description} -${Math.floor(m.value * 100)}%`).join('、');
-      escapeLines.push(`*已生效减益：${modDesc}*`);
-    }
-    escapeLines.push(`💡 *连击越高，收服成功率越大*`);
-    return escapeLines.join('\n');
+    return `\n💨 ${monsterEmoji} ${qualityLabel} **${drop.monster.name}** 逃跑！ *"${drop.monster.captureQuote}"* · +2${tagStr}`;
   }
 
-  // 闪光掉落 - 特殊渲染
   if (drop.isShiny) {
-    return [
-      '',
-      '---',
-      '🌈🌈🌈 **闪光降临！** 🌈🌈🌈',
-      '',
-      `✨ **${drop.monster.name} ✨**`,
-      `*闪光变体 · 极其稀有*`,
-      `> "${drop.monster.captureQuote}"`,
-      '',
-      `修行值 +${expResult.totalExp} · 图鉴 ${collectedCount}/${totalMonsters}`,
-      drop.isPityTriggered ? '🔮 *保底触发*' : '',
-      drop.isUpMonster ? '📢 *本周 UP*' : '',
-    ].filter(Boolean).join('\n');
+    return `\n🌈 ${monsterEmoji} ✨ **${drop.monster.name}** ✨ 闪光降临！ *"${drop.monster.captureQuote}"* · +${expResult.totalExp} · 📖${collectedCount}/${totalMonsters}${tagStr}`;
   }
 
-  // 史诗及以上 - 华丽渲染
   if (drop.monster.quality === 'epic' || drop.monster.quality === 'legendary') {
-    return [
-      '',
-      '---',
-      `✦✦✦ **${qualityLabel}降临！** ✦✦✦`,
-      '',
-      `**${drop.monster.name}**`,
-      `*${drop.monster.origin}*`,
-      `> "${drop.monster.captureQuote}"`,
-      '',
-      `修行值 +${expResult.totalExp} · 图鉴 ${collectedCount}/${totalMonsters}`,
-      drop.isPityTriggered ? '🔮 *保底触发*' : '',
-      drop.isUpMonster ? '📢 *本周 UP*' : '',
-    ].filter(Boolean).join('\n');
+    return `\n✦ ${monsterEmoji} ${qualityLabel} **${drop.monster.name}** · *${drop.monster.origin}* · *"${drop.monster.captureQuote}"* · +${expResult.totalExp} · 📖${collectedCount}/${totalMonsters}${tagStr}`;
   }
 
-  // 新妖怪发现
-  if (drop.isNew) {
-    return [
-      '',
-      '---',
-      `📖 **图鉴新发现！**`,
-      '',
-      `${qualityLabel} **${drop.monster.name}** · ${drop.monster.origin}`,
-      `> "${drop.monster.captureQuote}"`,
-      '',
-      `修行值 +${expResult.totalExp}${expResult.firstUseMultiplier > 1 ? ' (首次 ×5)' : ''} · 图鉴 ${collectedCount}/${totalMonsters}`,
-    ].join('\n');
-  }
-
-  // 普通掉落 - 简洁版
-  return [
-    '',
-    '---',
-    `🗡️ **降妖成功！** 收服了 ${qualityLabel} ${drop.monster.name}`,
-    `> "${drop.monster.captureQuote}"`,
-    '',
-    `修行值 +${expResult.totalExp} · 图鉴 ${collectedCount}/${totalMonsters}`,
-  ].join('\n');
+  return `\n🗡️ ${monsterEmoji} ${qualityLabel} **${drop.monster.name}** · *"${drop.monster.captureQuote}"* · +${expResult.totalExp} · 📖${collectedCount}/${totalMonsters}${tagStr}`;
 }
 
 // ============ 升级渲染 ============
 
 export function renderLevelUp(levelUp: LevelUpResult): string {
-  const lines = [
-    '',
-    '---',
-    `⬆️ **修为精进！** ${levelUp.previousTitle} → ${levelUp.newTitle} (Lv.${levelUp.newLevel})`,
-  ];
-
-  // 添加升级语录
-  const quotes: Record<number, string> = {
-    2: '菩提祖师云：尚可造化。',
-    3: '菩提祖师云：悟性不错，可堪造化。',
-    4: '天庭来报：准予散仙之位。',
-    5: '玉帝有旨：封为天兵。',
-    6: '托塔天王令：升任天将。',
-    7: '太乙真人赞：有哪吒之勇。',
-    8: '玉帝惊叹：堪比二郎神。',
-    9: '如来佛祖：齐天大圣，名不虚传。',
-    10: '如来佛祖：善哉善哉，封斗战胜佛。',
-  };
-
-  const quote = quotes[levelUp.newLevel];
-  if (quote) {
-    lines.push(`> "${quote}"`);
-  }
-
-  if (levelUp.unlockDescription) {
-    lines.push('', `🔓 解锁：${levelUp.unlockDescription}`);
-  }
-
-  return lines.join('\n');
+  const unlockPart = levelUp.unlockDescription ? ` · 🔓${levelUp.unlockDescription}` : '';
+  return `\n⬆️ **升级！** ${levelUp.previousTitle} → **${levelUp.newTitle}** (Lv.${levelUp.newLevel})${unlockPart}`;
 }
 
 // ============ 机缘渲染 ============
@@ -147,26 +66,18 @@ export function renderEncounter(encounter: Encounter): string {
   const immortal = getImmortalById(encounter.immortalId);
   if (!immortal) return '';
 
-  const lines = [
-    '',
-    '---',
-    `☁️ **机缘降临！**`,
-    '',
-    `**${immortal.name}** 驾云而过：`,
-    `> "${immortal.guidanceQuote}"`,
-  ];
+  const typeTag = encounter.type === 'guidance' ? '🤍点化'
+    : encounter.type === 'treasure' ? '💛赐宝' : '💜收徒';
 
+  let extra = '';
   if (encounter.type === 'treasure' && encounter.treasureId) {
-    const treasureName = getTreasureName(encounter.treasureId);
-    const treasureDesc = getTreasureDescription(encounter.treasureId);
-    lines.push('', `💛 **赐宝**：${treasureName}`, `效果：${treasureDesc}`);
+    extra = ` · 获得${getTreasureName(encounter.treasureId)}`;
   }
-
   if (encounter.type === 'apprentice') {
-    lines.push('', `💜 **收徒**：${immortal.name}收你为徒，获得永久加成！`);
+    extra = ' · 永久加成';
   }
 
-  return lines.join('\n');
+  return `\n☁️ ${typeTag} **${immortal.name}**：*"${immortal.guidanceQuote}"*${extra}`;
 }
 
 // ============ 成就渲染 ============
@@ -174,20 +85,10 @@ export function renderEncounter(encounter: Encounter): string {
 export function renderNewAchievements(achievements: Achievement[]): string {
   if (achievements.length === 0) return '';
 
-  const lines = ['', '---'];
-
-  for (const achievement of achievements) {
-    lines.push(
-      `🏆 **成就解锁！** ${achievement.emoji} ${achievement.name}`,
-      `*${achievement.description}*`,
-      `修行值 +${achievement.expReward}`,
-    );
-    if (achievement.titleReward) {
-      lines.push(`🎖️ 获得称号：「${achievement.titleReward}」`);
-    }
-  }
-
-  return lines.join('\n');
+  return achievements.map(achievement => {
+    const titlePart = achievement.titleReward ? ` 🎖️「${achievement.titleReward}」` : '';
+    return `\n🏆 ${achievement.emoji} **${achievement.name}** — *${achievement.description}* · +${achievement.expReward}${titlePart}`;
+  }).join('');
 }
 
 // ============ 面板渲染（命令响应） ============
@@ -205,10 +106,8 @@ export function renderProfilePanel(profile: UserProfile, collection: UserCollect
   const upMonster = getWeeklyUpMonster();
   const allAchievementsList = getAllAchievements();
 
-  // 进度条
-  const filledBlocks = Math.floor(progress / 5);
-  const emptyBlocks = 20 - filledBlocks;
-  const progressBar = '▓'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
+  // 进度条（使用 emoji 圆形符号，兼容钉钉 Markdown 渲染）
+  const progressBar = renderEmojiBar(progress);
 
   const lines = [
     `### 🐒 西游妖魔榜 · 修行面板`,
@@ -226,7 +125,7 @@ export function renderProfilePanel(profile: UserProfile, collection: UserCollect
       `距离下一级「${nextLevel.title}」还需 ${expToNext?.toLocaleString()} 修行值`,
     );
   } else {
-    lines.push(`**修行值**：${profile.totalExp.toLocaleString()} (已满级)`, '', `${'▓'.repeat(20)}`);
+    lines.push(`**修行值**：${profile.totalExp.toLocaleString()} (已满级)`, '', `${renderEmojiBar(100)}`);
   }
 
   lines.push(
@@ -297,11 +196,11 @@ export function renderCollectionPanel(collection: UserCollection): string {
   ];
 
   const qualityGroups: Array<{ quality: string; label: string; monsters: Monster[] }> = [
-    { quality: 'normal', label: '⬜ 普通', monsters: allMonstersList.filter(m => m.quality === 'normal') },
-    { quality: 'fine', label: '🟢 精良', monsters: allMonstersList.filter(m => m.quality === 'fine') },
-    { quality: 'rare', label: '🔵 稀有', monsters: allMonstersList.filter(m => m.quality === 'rare') },
-    { quality: 'epic', label: '🟣 史诗', monsters: allMonstersList.filter(m => m.quality === 'epic') },
-    { quality: 'legendary', label: '🟡 传说', monsters: allMonstersList.filter(m => m.quality === 'legendary') },
+    { quality: 'normal', label: QUALITY_LABELS.normal, monsters: allMonstersList.filter(m => m.quality === 'normal') },
+    { quality: 'fine', label: QUALITY_LABELS.fine, monsters: allMonstersList.filter(m => m.quality === 'fine') },
+    { quality: 'rare', label: QUALITY_LABELS.rare, monsters: allMonstersList.filter(m => m.quality === 'rare') },
+    { quality: 'epic', label: QUALITY_LABELS.epic, monsters: allMonstersList.filter(m => m.quality === 'epic') },
+    { quality: 'legendary', label: QUALITY_LABELS.legendary, monsters: allMonstersList.filter(m => m.quality === 'legendary') },
   ];
 
   for (const group of qualityGroups) {
@@ -551,6 +450,17 @@ export function renderShowOff(profile: UserProfile, collection: UserCollection):
 
 // ============ 辅助函数 ============
 
+/**
+ * 渲染 emoji 进度条（8 格，用圆形符号表示）
+ *
+ * 示例：●●●●●○○○ 62%
+ */
+function renderEmojiBar(percent: number): string {
+  const total = 8;
+  const filled = Math.round(percent / 100 * total);
+  return '●'.repeat(filled) + '○'.repeat(total - filled);
+}
+
 function getComboDisplay(combo: number): string {
   if (combo >= 10) return '3.0';
   if (combo >= 5) return '2.0';
@@ -561,11 +471,11 @@ function getComboDisplay(combo: number): string {
 function getQualityProgress(collection: UserCollection): Array<[string, number, number]> {
   const allMonstersList = getAllMonsters();
   const qualities: Array<{ label: string; quality: string }> = [
-    { label: '⬜ 普通', quality: 'normal' },
-    { label: '🟢 精良', quality: 'fine' },
-    { label: '🔵 稀有', quality: 'rare' },
-    { label: '🟣 史诗', quality: 'epic' },
-    { label: '🟡 传说', quality: 'legendary' },
+    { label: QUALITY_LABELS.normal, quality: 'normal' },
+    { label: QUALITY_LABELS.fine, quality: 'fine' },
+    { label: QUALITY_LABELS.rare, quality: 'rare' },
+    { label: QUALITY_LABELS.epic, quality: 'epic' },
+    { label: QUALITY_LABELS.legendary, quality: 'legendary' },
   ];
 
   return qualities.map(({ label, quality }) => {
@@ -626,9 +536,7 @@ export function renderBountyPanel(profile: UserProfile): string {
     const tierLabel = BOUNTY_TIER_LABELS[bounty.tier] ?? bounty.tier;
     const status = bounty.completed ? '✅' : '⬜';
     const progressPercent = Math.min(100, Math.floor(bounty.current / bounty.target * 100));
-    const filledBlocks = Math.floor(progressPercent / 10);
-    const emptyBlocks = 10 - filledBlocks;
-    const progressBar = '█'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
+    const progressBar = renderEmojiBar(progressPercent);
 
     lines.push(
       `${status} **${tierLabel}**：${bounty.description}`,
@@ -661,16 +569,11 @@ export function renderBountyPanel(profile: UserProfile): string {
 }
 
 /**
- * 渲染悬赏令完成通知
+ * 渲染悬赏令完成通知（紧凑单行）
  */
 export function renderBountyComplete(bounty: Bounty): string {
   const tierLabel = BOUNTY_TIER_LABELS[bounty.tier] ?? bounty.tier;
-  return [
-    '',
-    '---',
-    `📜 **${tierLabel}完成！** 「${bounty.description}」`,
-    `奖励已发放：修行值 +${bounty.reward.exp}`,
-  ].join('\n');
+  return `\n📜 **${tierLabel}完成！** 「${bounty.description}」 · +${bounty.reward.exp}`;
 }
 
 // ============ v2: 随机事件渲染 ============
@@ -682,75 +585,31 @@ const EVENT_CATEGORY_EMOJI: Record<string, string> = {
 };
 
 /**
- * 渲染随机事件触发通知
+ * 渲染随机事件触发通知（紧凑版）
  */
 export function renderEventTrigger(event: RandomEvent | ChallengeEvent): string {
   const emoji = EVENT_CATEGORY_EMOJI[event.category] ?? '🎲';
-
-  const lines = [
-    '',
-    '---',
-    `${emoji} **随机事件：${event.name}！**`,
-    '',
-    `*${event.flavorText}*`,
-    '',
-  ];
-
-  if (event.category === 'blessing') {
-    lines.push(`🌟 **效果**：${event.description}`);
-    if (event.duration.type !== 'instant') {
-      lines.push(`剩余次数：${event.duration.remaining}/${event.duration.total}`);
-    }
-  }
+  const durationStr = event.duration.type !== 'instant' ? ` (${event.duration.remaining}/${event.duration.total})` : '';
 
   if (event.category === 'challenge') {
     const challenge = event as ChallengeEvent;
-    lines.push(
-      `⚔️ **挑战**：${event.description}`,
-      `🏆 成功：+${challenge.successReward.exp} 修行值${challenge.successReward.pityBonus ? ` + 保底 +${challenge.successReward.pityBonus}` : ''}`,
-      `💀 失败：修行值 -${challenge.failurePenalty.expLoss}${challenge.failurePenalty.comboReset ? ' + 连击归零' : ''}`,
-      `⏰ 时限：${challenge.operationLimit} 次操作内完成`,
-      '',
-      `当前进度：${challenge.challengeCondition.current}/${challenge.challengeCondition.target}`,
-    );
+    return `\n${emoji} **${event.name}** — ${event.description} · 🏆+${challenge.successReward.exp} 💀-${challenge.failurePenalty.expLoss} · ⏰${challenge.operationLimit}次`;
   }
 
-  if (event.category === 'disaster') {
-    lines.push(`😈 **效果**：${event.description}`);
-    if (event.resolution) {
-      lines.push(`💡 **化解**：${event.resolution.description}`);
-    }
-    if (event.duration.type !== 'instant') {
-      lines.push(`剩余次数：${event.duration.remaining}/${event.duration.total}`);
-    }
-  }
-
-  return lines.join('\n');
+  const resolvePart = (event.category === 'disaster' && event.resolution) ? ` · 💡${event.resolution.description}` : '';
+  return `\n${emoji} **${event.name}** — ${event.description}${durationStr}${resolvePart}`;
 }
 
 /**
- * 渲染挑战事件结果
+ * 渲染挑战事件结果（紧凑单行）
  */
 export function renderChallengeResult(event: ChallengeEvent, success: boolean): string {
   if (success) {
-    return [
-      '',
-      '---',
-      `🏆 **${event.name} · 挑战成功！**`,
-      '',
-      `奖励已发放：修行值 +${event.successReward.exp}`,
-      event.successReward.pityBonus ? `保底计数器 +${event.successReward.pityBonus}` : '',
-    ].filter(Boolean).join('\n');
+    const pityPart = event.successReward.pityBonus ? ` · 保底+${event.successReward.pityBonus}` : '';
+    return `\n🏆 **${event.name} · 挑战成功！** +${event.successReward.exp}${pityPart}`;
   }
-
-  return [
-    '',
-    '---',
-    `💀 **${event.name} · 挑战失败**`,
-    '',
-    `惩罚：修行值 -${event.failurePenalty.expLoss}`,
-    event.failurePenalty.comboReset ? '连击已归零' : '',
-  ].filter(Boolean).join('\n');
+  const comboPart = event.failurePenalty.comboReset ? ' · 连击归零' : '';
+  return `\n💀 **${event.name} · 挑战失败** -${event.failurePenalty.expLoss}${comboPart}`;
 }
 
 /**

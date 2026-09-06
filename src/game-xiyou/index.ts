@@ -375,7 +375,12 @@ export class GamificationEngine {
   /**
    * 渲染完整输出（追加到 agent 回复末尾的 Markdown）
    *
-   * v2: 新增悬赏令完成、随机事件、挑战结果的渲染
+   * v3: 紧凑化 — 降妖结果 + 附属事件合并为双列表格，大幅减少纵向空间
+   *
+   * 布局策略：
+   * - 只有降妖结果时：直接单行输出
+   * - 降妖 + 附属事件时：用表格 左列=降妖 | 右列=附属事件列表
+   * - 只有附属事件时：紧凑列表输出
    */
   private renderOutput(
     dropResult: DropResult,
@@ -387,9 +392,7 @@ export class GamificationEngine {
     triggeredEvent: RandomEvent | ChallengeEvent | null,
     eventResults: Array<{ event: RandomEvent | ChallengeEvent; outcome: string }>
   ): string {
-    const parts: string[] = [];
-
-    // 掉落结果（如果设置了静默普通掉落且未逃跑，则跳过）
+    // 收集降妖结果（左列）
     const shouldShowDrop = dropResult.monster.id && !(
       this.profile.settings.muteNormalDrops &&
       dropResult.monster.quality === 'normal' &&
@@ -398,51 +401,66 @@ export class GamificationEngine {
       !dropResult.escaped
     );
 
-    if (shouldShowDrop) {
-      parts.push(renderDropResult(dropResult, expResult, this.collection));
-    }
+    const dropLine = shouldShowDrop
+      ? renderDropResult(dropResult, expResult, this.collection).trim()
+      : '';
 
-    // 升级通知
+    // 收集附属事件（右列）
+    const sideEvents: string[] = [];
+
     if (levelUp) {
-      parts.push(renderLevelUp(levelUp));
+      sideEvents.push(renderLevelUp(levelUp).trim());
     }
-
-    // 机缘事件
     if (encounter) {
-      parts.push(renderEncounter(encounter));
+      sideEvents.push(renderEncounter(encounter).trim());
     }
-
-    // v2: 随机事件触发通知
     if (triggeredEvent) {
-      parts.push(renderEventTrigger(triggeredEvent));
+      sideEvents.push(renderEventTrigger(triggeredEvent).trim());
     }
-
-    // v2: 挑战事件结果
     for (const result of eventResults) {
       if (result.event.category === 'challenge') {
         if (result.outcome === 'success' || result.outcome === 'failure') {
-          parts.push(renderChallengeResult(
+          sideEvents.push(renderChallengeResult(
             result.event as ChallengeEvent,
             result.outcome === 'success'
-          ));
+          ).trim());
         }
       }
       if (result.event.category === 'disaster' && result.outcome === 'resolved') {
-        parts.push(renderDisasterResolved(result.event));
+        sideEvents.push(renderDisasterResolved(result.event).trim());
       }
     }
-
-    // v2: 悬赏令完成通知
     for (const bounty of completedBounties) {
-      parts.push(renderBountyComplete(bounty));
+      sideEvents.push(renderBountyComplete(bounty).trim());
     }
-
-    // 新成就
     if (newAchievements.length > 0) {
-      parts.push(renderNewAchievements(newAchievements));
+      sideEvents.push(renderNewAchievements(newAchievements).trim());
     }
 
-    return parts.join('\n');
+    // 组装输出
+    if (!dropLine && sideEvents.length === 0) {
+      return '';
+    }
+
+    // 有降妖 + 有附属事件：用表格合并展示
+    if (dropLine && sideEvents.length > 0) {
+      const sideContent = sideEvents.join(' · ');
+      return [
+        '',
+        '---',
+        `| 🗡️ 降妖 | 📋 事件 |`,
+        `|---|---|`,
+        `| ${dropLine} | ${sideContent} |`,
+      ].join('\n');
+    }
+
+    // 只有降妖结果
+    if (dropLine) {
+      return `\n---\n${dropLine}`;
+    }
+
+    // 只有附属事件
+    return `\n---\n${sideEvents.join('\n')}`;
   }
 
   /**

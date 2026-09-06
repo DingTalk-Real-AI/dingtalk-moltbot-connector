@@ -10,11 +10,11 @@
 export type MonsterQuality = 'normal' | 'fine' | 'rare' | 'epic' | 'legendary' | 'shiny';
 
 export const QUALITY_LABELS: Record<MonsterQuality, string> = {
-  normal: '⬜ 普通',
-  fine: '🟢 精良',
-  rare: '🔵 稀有',
-  epic: '🟣 史诗',
-  legendary: '🟡 传说',
+  normal: '🪨 普通',
+  fine: '🌿 精良',
+  rare: '💎 稀有',
+  epic: '🔮 史诗',
+  legendary: '👑 传说',
   shiny: '✨ 闪光',
 };
 
@@ -27,6 +27,7 @@ export const QUALITY_ORDER: MonsterQuality[] = [
 export interface Monster {
   id: string;
   name: string;
+  emoji: string;
   quality: MonsterQuality;
   origin: string;
   relatedProduct: string | null;

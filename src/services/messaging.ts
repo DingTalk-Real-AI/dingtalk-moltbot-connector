@@ -873,7 +873,7 @@ export async function sendMediaToDingTalk(params: {
     const fileName = mediaUrl.split("/").pop() || "file";
 
     if (mediaType === "image") {
-      // 图片消息 - 发送真正的图片消息，使用原始 mediaId（带 @）
+      // 图片消息 - sampleImageMsg 的 photoURL 支持 mediaId 或图片 URL
       const result = await sendProactive(config, targetParam, uploadResult.mediaId, {
         msgType: "image",
         replyToId,
